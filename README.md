@@ -1,4 +1,6 @@
-Shapes is a small on-device Swift package that adds Notes-style smart-shape snapping to PencilKit: a single hand-drawn stroke is recognized and snapped to a clean geometric shape.
+# Shapes: On-device Shape Recognition and PencilKit Snapping for Swift (iOS, macOS)
+
+Shapes is a small on-device Swift package for single-stroke sketch recognition: it adds Notes-style smart-shape snapping to PencilKit, so a single hand-drawn stroke (from an Apple Pencil or a finger) is recognized and snapped to a clean geometric shape. It works directly on the digital ink you already capture, with no separate model download.
 
 ```swift
 import Shapes
@@ -113,6 +115,14 @@ A minimal example app is included in `Examples/ShapesExample`, a `PKCanvasView` 
 ## Model
 
 The bundled model is published at [`desert-ant-labs/shapes`](https://huggingface.co/desert-ant-labs/shapes) on Hugging Face: full weights, the compiled Core ML build, and the model card.
+
+## Other platforms
+
+Same model, native on each platform:
+
+- [`shapes-kotlin`](https://github.com/Desert-Ant-Labs/shapes-kotlin): Kotlin for Android and JVM.
+- [`shapes-js`](https://github.com/Desert-Ant-Labs/shapes-js): JavaScript and TypeScript for Node and the browser.
+- Model weights and card: [`desert-ant-labs/shapes`](https://huggingface.co/desert-ant-labs/shapes)
 
 ## License
 
