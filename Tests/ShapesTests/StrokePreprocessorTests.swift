@@ -1,4 +1,4 @@
-import CoreGraphics
+import Foundation
 import XCTest
 @testable import Shapes
 
@@ -9,8 +9,8 @@ final class StrokePreprocessorTests: XCTestCase {
     // `preprocess.py` for this exact input with the frozen config.
     func testMatchesPythonReference() throws {
         let stroke = [
-            CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 0), CGPoint(x: 10, y: 8),
-            CGPoint(x: 2, y: 8), CGPoint(x: 2, y: 3),
+            Point(x: 0, y: 0), Point(x: 10, y: 0), Point(x: 10, y: 8),
+            Point(x: 2, y: 8), Point(x: 2, y: 3),
         ]
         let f = try pre.process(points: stroke)
 
@@ -31,13 +31,13 @@ final class StrokePreprocessorTests: XCTestCase {
     }
 
     func testFirstPointIsZeroDirection() throws {
-        let f = try pre.process(points: [CGPoint(x: 0, y: 0), CGPoint(x: 5, y: 0)])
+        let f = try pre.process(points: [Point(x: 0, y: 0), Point(x: 5, y: 0)])
         XCTAssertEqual(f[0].cosTheta, 0)
         XCTAssertEqual(f[0].sinTheta, 0)
     }
 
     func testStraightLineHasConstantDirection() throws {
-        let pts = (0...20).map { CGPoint(x: Double($0), y: 0) }
+        let pts = (0...20).map { Point(x: Double($0), y: 0) }
         let f = try pre.process(points: pts)
         for p in f.dropFirst() {
             XCTAssertEqual(p.cosTheta, 1.0, accuracy: 1e-5)
@@ -46,11 +46,11 @@ final class StrokePreprocessorTests: XCTestCase {
     }
 
     func testCircleDirectionRotatesFullTurn() throws {
-        var pts: [CGPoint] = []
+        var pts: [Point] = []
         let n = 200
         for i in 0...n {
             let t = 2.0 * Double.pi * Double(i) / Double(n)
-            pts.append(CGPoint(x: cos(t), y: sin(t)))
+            pts.append(Point(x: cos(t), y: sin(t)))
         }
         let f = try pre.process(points: pts)
         // Direction angle should sweep close to a full 2π around the circle.
@@ -70,18 +70,18 @@ final class StrokePreprocessorTests: XCTestCase {
     func testCurvatureChannelEnabled() throws {
         let cfg = PreprocessConfig(addCurvature: true)
         let p = StrokePreprocessor(config: cfg)
-        let pts = (0...20).map { CGPoint(x: Double($0), y: 0) }
+        let pts = (0...20).map { Point(x: Double($0), y: 0) }
         let f = try p.process(points: pts)
         // A straight line has ~zero turning angle everywhere.
         for pt in f { XCTAssertEqual(pt.curvature, 0, accuracy: 1e-5) }
     }
 
     func testRejectsTooFewPoints() {
-        XCTAssertThrowsError(try pre.process(points: [CGPoint(x: 1, y: 1)]))
+        XCTAssertThrowsError(try pre.process(points: [Point(x: 1, y: 1)]))
     }
 
     func testRejectsDuplicatePointsAsDegenerate() {
-        let dup = [CGPoint(x: 3, y: 3), CGPoint(x: 3, y: 3), CGPoint(x: 3, y: 3)]
+        let dup = [Point(x: 3, y: 3), Point(x: 3, y: 3), Point(x: 3, y: 3)]
         XCTAssertThrowsError(try pre.process(points: dup))
     }
 

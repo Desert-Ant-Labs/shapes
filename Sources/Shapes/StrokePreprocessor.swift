@@ -1,5 +1,4 @@
-import CoreGraphics
-import Foundation
+import RealModule
 
 /// Converts one raw pen-down…pen-up stroke into the model's `[N, C]` feature
 /// vectors. This is a 1:1 port of the Python reference (`preprocess.py`); the
@@ -19,13 +18,11 @@ struct StrokePreprocessor {
         self.config = config
     }
 
-    private struct Point { var x: Double; var y: Double }
-
     // MARK: Public entry point
 
     /// Run the full pipeline on one stroke. Throws `DegenerateStrokeError` for
     /// input that is too short / too small.
-    func process(points rawPoints: [CGPoint]) throws -> [StrokePoint] {
+    func process(points rawPoints: [Point]) throws -> [StrokePoint] {
         let cleaned = dedupeConsecutive(rawPoints)
 
         if cleaned.count < config.minPoints {
@@ -45,13 +42,13 @@ struct StrokePreprocessor {
 
     // MARK: Step 1 — dedupe + length
 
-    private func dedupeConsecutive(_ points: [CGPoint]) -> [Point] {
+    private func dedupeConsecutive(_ points: [Point]) -> [Point] {
         guard let first = points.first else { return [] }
-        var cleaned: [Point] = [Point(x: Double(first.x), y: Double(first.y))]
+        var cleaned: [Point] = [Point(x: first.x, y: first.y)]
         let epsSq = config.dedupeEpsilon * config.dedupeEpsilon
-        for i in 1..<max(points.count, 1) {
-            let x = Double(points[i].x)
-            let y = Double(points[i].y)
+        for i in 1..<Swift.max(points.count, 1) {
+            let x = points[i].x
+            let y = points[i].y
             let last = cleaned[cleaned.count - 1]
             let dx = x - last.x
             let dy = y - last.y
@@ -182,7 +179,7 @@ struct StrokePreprocessor {
             var curvature = 0.0
             if config.addCurvature {
                 if i > 0 && (cosT != 0.0 || sinT != 0.0) {
-                    let theta = atan2(sinT, cosT)
+                    let theta = Double.atan2(y: sinT, x: cosT)
                     if havePrevTheta {
                         curvature = wrapPi(theta - prevTheta)
                     }

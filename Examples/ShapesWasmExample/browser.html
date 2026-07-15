@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Browser example for packages/shapes-node with local WebAssembly and onnxruntime-web. -->
+<html>
+<body>
+<script type="importmap">
+  {
+    "imports": {
+      "@bjorn3/browser_wasi_shim": "/node_modules/@bjorn3/browser_wasi_shim/dist/index.js",
+      "@desert-ant-labs/shapes": "/node_modules/@desert-ant-labs/shapes/index.js",
+      "onnxruntime-web": "/node_modules/onnxruntime-web/dist/ort.min.mjs"
+    }
+  }
+</script>
+<script type="module">
+  import * as ort from "onnxruntime-web";
+  ort.env.wasm.wasmPaths = "/node_modules/onnxruntime-web/dist/";
+
+  function noisyRectangle() {
+    const pts = [];
+    const corners = [[20, 20], [180, 24], [176, 120], [16, 116]];
+    const jitter = () => (Math.random() - 0.5) * 4;
+    for (let k = 0; k < 4; k++) {
+      const [ax, ay] = corners[k];
+      const [bx, by] = corners[(k + 1) % 4];
+      for (let s = 0; s < 24; s++) {
+        const t = s / 24;
+        pts.push({ x: ax + (bx - ax) * t + jitter(), y: ay + (by - ay) * t + jitter() });
+      }
+    }
+    return pts;
+  }
+
+  async function run() {
+    const { Shapes } = await import("@desert-ant-labs/shapes");
+    // Shapes downloads, verifies, and caches the model from the Hub;
+    // onnxruntime-web runs inference.
+    const shapes = await Shapes.load({ ort });
+
+    const start = performance.now();
+    const shape = await shapes.recognize(noisyRectangle());
+    return { shape, ms: Math.round(performance.now() - start) };
+  }
+
+  run().then(r => { window.__result = r; }, e => { window.__error = String(e && e.stack || e); });
+</script>
+</body>
+</html>

@@ -1,23 +1,25 @@
-import CoreGraphics
-import Foundation
+import RealModule
 
 /// A recognized, fitted shape in the same coordinate space as the input stroke.
-public enum Shape: Sendable {
+///
+/// Point coordinates are ``Point`` values. On Apple platforms `CoreGraphics`
+/// conveniences (`CGPoint`/`CGPath`) are provided for rendering.
+public enum Shape: Sendable, Equatable {
     /// A straight line segment from `from` to `to`.
-    case line(from: CGPoint, to: CGPoint)
+    case line(from: Point, to: Point)
     /// A rectangle given by its four corners, in order around the perimeter.
-    case rectangle(corners: [CGPoint])
+    case rectangle(corners: [Point])
     /// A triangle given by its three vertices.
-    case triangle(vertices: [CGPoint])
+    case triangle(vertices: [Point])
     /// An ellipse with the given center, semi-axes, and `rotation` (radians).
-    case ellipse(center: CGPoint, semiMajor: CGFloat, semiMinor: CGFloat, rotation: CGFloat)
+    case ellipse(center: Point, semiMajor: Double, semiMinor: Double, rotation: Double)
     /// A star alternating between `outerRadius` and `innerRadius` across
     /// `pointCount` points, with `rotation` in radians.
-    case star(center: CGPoint, outerRadius: CGFloat, innerRadius: CGFloat,
-              rotation: CGFloat, pointCount: Int)
+    case star(center: Point, outerRadius: Double, innerRadius: Double,
+              rotation: Double, pointCount: Int)
 
     /// A closed (or, for a line, open) polyline outline suitable for rendering.
-    public func outline(samples: Int = 96) -> [CGPoint] {
+    public func outline(samples: Int = 96) -> [Point] {
         switch self {
         case let .line(a, b):
             return [a, b]
@@ -26,35 +28,24 @@ public enum Shape: Sendable {
         case let .triangle(verts):
             return verts
         case let .ellipse(center, major, minor, rotation):
-            let c = cos(Double(rotation)), s = sin(Double(rotation))
+            let c = Double.cos(rotation), s = Double.sin(rotation)
             return (0..<samples).map { i in
                 let t = 2 * Double.pi * Double(i) / Double(samples)
-                let x = Double(major) * cos(t), y = Double(minor) * sin(t)
-                return CGPoint(x: Double(center.x) + x * c - y * s,
-                               y: Double(center.y) + x * s + y * c)
+                let x = major * Double.cos(t), y = minor * Double.sin(t)
+                return Point(x: center.x + x * c - y * s,
+                             y: center.y + x * s + y * c)
             }
         case let .star(center, outer, inner, rotation, pointCount):
-            var pts: [CGPoint] = []
+            var pts: [Point] = []
             let steps = pointCount * 2
             for i in 0..<steps {
-                let a = Double(rotation) - .pi / 2 + Double(i) * .pi / Double(pointCount)
-                let r = (i % 2 == 0) ? Double(outer) : Double(inner)
-                pts.append(CGPoint(x: Double(center.x) + r * cos(a),
-                                   y: Double(center.y) + r * sin(a)))
+                let a = rotation - .pi / 2 + Double(i) * .pi / Double(pointCount)
+                let r = (i % 2 == 0) ? outer : inner
+                pts.append(Point(x: center.x + r * Double.cos(a),
+                                 y: center.y + r * Double.sin(a)))
             }
             return pts
         }
-    }
-
-    /// A renderable path. Closed for all shapes except `.line`.
-    public var path: CGPath {
-        let pts = outline()
-        let path = CGMutablePath()
-        guard let first = pts.first else { return path }
-        path.move(to: first)
-        for p in pts.dropFirst() { path.addLine(to: p) }
-        if case .line = self {} else { path.closeSubpath() }
-        return path
     }
 }
 

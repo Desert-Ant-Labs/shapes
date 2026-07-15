@@ -1,5 +1,3 @@
-import Foundation
-
 /// A single preprocessed stroke point: the per-point feature vector fed to the
 /// model. Channel order is fixed everywhere: `[distance, cosTheta, sinTheta]`
 /// (plus `curvature` when enabled), matching the Python reference.

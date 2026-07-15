@@ -1,5 +1,3 @@
-import Foundation
-
 /// Tunables + frozen constants for the stroke preprocessor.
 ///
 /// The defaults match the trained model's `config.json` exactly. The SAME values

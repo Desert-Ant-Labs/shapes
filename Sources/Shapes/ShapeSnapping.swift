@@ -20,10 +20,17 @@ public extension PKCanvasView {
     /// While drawing, pausing briefly shows a faded preview of the recognized
     /// shape; lifting the pen replaces the raw stroke with the clean one. The
     /// swap is registered with the canvas's undo manager, so undo/redo work.
-    /// Call again to update the configuration; ``disableShapeSnapping()`` to stop.
-    func enableShapeSnapping(configuration: ShapeSnappingConfiguration = .init()) {
+    /// Call again to update the recognizer or configuration;
+    /// ``disableShapeSnapping()`` to stop.
+    ///
+    /// - Parameter shapes: the recognizer to use. The default downloads the
+    ///   model on demand and caches it. For instant, offline snapping add the
+    ///   `ShapesCoreMLResources` product and pass
+    ///   `Shapes(bundle: ShapesCoreMLResourcesBundle.bundle)`.
+    func enableShapeSnapping(using shapes: Shapes = Shapes(),
+                             configuration: ShapeSnappingConfiguration = .init()) {
         disableShapeSnapping()
-        let snapper = ShapeSnapper(canvasView: self, configuration: configuration)
+        let snapper = ShapeSnapper(canvasView: self, shapes: shapes, configuration: configuration)
         objc_setAssociatedObject(self, &shapeSnapperKey, snapper, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 
@@ -49,9 +56,14 @@ private var shapeSnapperKey: UInt8 = 0
 // MARK: - ShapeSnapper
 
 /// Watches a canvas for a draw → pause → lift gesture and snaps the stroke.
+///
+/// Recognition runs through the shared ``Shapes`` recognizer (the bundled Core
+/// ML model). It is `async`, so results are delivered back on the main actor and
+/// guarded by a generation counter, and stale results from an earlier pen state
+/// are discarded.
 final class ShapeSnapper: NSObject {
     private weak var canvas: PKCanvasView?
-    private let recognizer: ShapeRecognizer
+    private let shapes: Shapes
     private let configuration: ShapeSnappingConfiguration
     private weak var previousDelegate: PKCanvasViewDelegate?
     private let overlay = PreviewOverlay()
@@ -65,18 +77,22 @@ final class ShapeSnapper: NSObject {
     private var pendingSnap = false
     private var isProgrammatic = false
     private var pauseWork: DispatchWorkItem?
+    /// Bumped on every pen-down / significant move so stale async recognition
+    /// results are ignored.
+    private var generation = 0
 
     /// Movement under this distance (points) doesn't reset the pause timer.
     private static let movementTolerance: CGFloat = 6
     /// Strokes whose bounding-box diagonal is smaller than this are ignored.
     private static let minimumExtent: CGFloat = 24
 
-    init?(canvasView: PKCanvasView, configuration: ShapeSnappingConfiguration) {
-        guard let recognizer = try? ShapeRecognizer() else { return nil }
-        self.recognizer = recognizer
+    init(canvasView: PKCanvasView, shapes: Shapes, configuration: ShapeSnappingConfiguration) {
+        self.shapes = shapes
         self.configuration = configuration
         canvas = canvasView
         super.init()
+        // Warm the model so the first pause preview is instant.
+        Task { try? await shapes.download() }
         attach()
     }
 
@@ -121,6 +137,7 @@ final class ShapeSnapper: NSObject {
         previewing = false
         pendingSnap = false
         currentShape = nil
+        generation += 1
         cancelPause()
         hidePreview()
         strokeCountAtStart = canvas.drawing.strokes.count
@@ -137,6 +154,7 @@ final class ShapeSnapper: NSObject {
                 currentShape = nil
                 hidePreview()
             }
+            generation += 1
             schedulePause()
         }
     }
@@ -174,7 +192,16 @@ final class ShapeSnapper: NSObject {
         let extent = hypot(xs.max()! - xs.min()!, ys.max()! - ys.min()!)
         guard extent >= Self.minimumExtent else { return }
 
-        guard let shape = try? recognizer.recognize(points: pts) else {
+        let token = generation
+        Task { [weak self, shapes] in
+            let shape = try? await shapes.recognize(points: pts)
+            await MainActor.run { self?.applyPreview(shape, token: token) }
+        }
+    }
+
+    private func applyPreview(_ shape: Shape?, token: Int) {
+        guard penDown, token == generation else { return }
+        guard let shape else {
             previewing = false
             currentShape = nil
             hidePreview()
@@ -225,7 +252,17 @@ final class ShapeSnapper: NSObject {
 
         // Re-recognize from the committed stroke so the clean shape lands in the
         // exact coordinate space of the ink it replaces.
-        guard let shape = try? recognizer.recognize(last) else {
+        let pts = strokePoints(last)
+        let token = generation
+        Task { [weak self, shapes] in
+            let shape = try? await shapes.recognize(points: pts)
+            await MainActor.run { self?.applySnap(shape, to: last, token: token) }
+        }
+    }
+
+    private func applySnap(_ shape: Shape?, to last: PKStroke, token: Int) {
+        guard token == generation, let canvas else { return }
+        guard let shape else {
             previewing = false
             currentShape = nil
             hidePreview()
@@ -260,7 +297,7 @@ final class ShapeSnapper: NSObject {
 
     private func makeStroke(_ shape: Shape, basedOn source: PKStroke?,
                             ink: PKInk, width: CGFloat) -> PKStroke {
-        let outline = shape.outline(samples: 96)
+        let outline = shape.cgOutline(samples: 96)
         // For closed shapes, start (and end) the loop at the midpoint of the first
         // edge so the path seam lands on a straight section rather than a corner
         // — otherwise that corner renders sharp while the spline rounds the others.
