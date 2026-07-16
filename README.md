@@ -43,7 +43,7 @@ Requirements: iOS 16+, macOS 13+, tvOS 16+, watchOS 9+, visionOS 1+, and Swift 5
 Add Shapes with Swift Package Manager:
 
 ```swift
-.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.2.0")
+.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.3.0")
 ```
 
 Then add the `Shapes` product to your app target. Live PencilKit snapping is part of the `Shapes` product.
@@ -129,7 +129,7 @@ dependencyResolutionManagement {
 
 // build.gradle.kts
 dependencies {
-    implementation("ai.desertant:shapes:0.2.0")
+    implementation("ai.desertant:shapes:0.3.0")
 }
 ```
 
@@ -137,8 +137,8 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("ai.desertant:shapes:0.2.0")
-    implementation("ai.desertant:shapes-tflite-resources:0.2.0")
+    implementation("ai.desertant:shapes:0.3.0")
+    implementation("ai.desertant:shapes-tflite-resources:0.3.0")
 }
 ```
 

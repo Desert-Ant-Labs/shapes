@@ -8,7 +8,7 @@
     "browser-example": "node browser-test.mjs"
   },
   "dependencies": {
-    "@desert-ant-labs/shapes": "^0.2.0",
+    "@desert-ant-labs/shapes": "^0.3.0",
     "@litertjs/core": "^2.5.2"
   },
   "devDependencies": {

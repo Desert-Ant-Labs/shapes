@@ -17,7 +17,7 @@ plugins {
 }
 
 group = "ai.desertant"
-version = "0.2.0"
+version = "0.3.0"
 
 // The model files are staged (gitignored) by the root project's Swift build
 // task; depend on it so a fresh checkout cannot produce or publish an empty

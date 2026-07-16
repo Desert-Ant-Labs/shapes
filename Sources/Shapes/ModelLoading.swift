@@ -56,7 +56,7 @@ public extension Shapes {
     /// The published model repository.
     static var modelRepo: String { "desert-ant-labs/shapes" }
     /// The model revision this SDK is built against (pinned; not configurable).
-    static var modelRevision: String { "v0.2.0" }
+    static var modelRevision: String { "v0.3.0" }
 
     /// Resolve the model for `directory` (adopt your files, or download there),
     /// then build loadable assets. `nil` uses the managed cache.
