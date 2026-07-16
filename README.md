@@ -1,131 +1,262 @@
-# Shapes: On-device Shape Recognition and PencilKit Snapping for Swift (iOS, macOS)
+# Shapes
 
-Shapes is a small on-device Swift package for single-stroke sketch recognition: it adds Notes-style smart-shape snapping to PencilKit, so a single hand-drawn stroke (from an Apple Pencil or a finger) is recognized and snapped to a clean geometric shape. It works directly on the digital ink you already capture, with no separate model download.
+On-device single-stroke shape recognition for Swift, Android, and JavaScript. Draw one stroke and Shapes turns it into a clean vector shape: a line, rectangle, triangle, ellipse, or star. Everything runs locally, so the stroke never leaves the device or browser.
+
+A small classifier proposes a shape, a geometric fitter produces the clean parameters, and the stroke is accepted only if it clears that class's calibrated gate. The result snaps to nice axes, circles, squares, and 15° rotations.
+
+```text
+✎  a wobbly hand-drawn box   ->   Shape.rectangle(corners: [...])   clean and axis-aligned
+```
+
+- [Features](#features)
+- [Swift](#swift)
+  - [Install](#install)
+  - [Usage](#usage)
+  - [Example](#example)
+- [Android](#android)
+  - [Install](#install-1)
+  - [Usage](#usage-1)
+  - [Example](#example-1)
+- [JavaScript and TypeScript](#javascript-and-typescript)
+  - [Install](#install-2)
+  - [Usage](#usage-2)
+  - [Example](#example-2)
+- [Shapes](#shapes-1)
+- [Model and caching](#model-and-caching)
+- [License](#license)
+
+## Features
+
+- Runs fully on device or in the local runtime. The stroke never leaves the machine.
+- Recognizes `line`, `rectangle`, `triangle`, `ellipse`, and `star`, and rejects scribbles.
+- Fits clean vector geometry and snaps it to axes, circles, squares, and 15° rotations.
+- One and the same recognition pipeline on every platform, so results match: Core ML on Apple, LiteRT on Android and Linux, LiteRT.js in the browser.
+- Small model, downloaded on demand and cached by default, or bundled for offline apps (about 0.2 MB on Apple, ~1.3 MB LiteRT); recognition is typically a few milliseconds.
+- Apple bonus: one-line live snapping on a PencilKit canvas with an undo-safe preview.
+
+## Swift
+
+### Install
+
+Requirements: iOS 16+, macOS 13+, tvOS 16+, watchOS 9+, visionOS 1+, and Swift 5.9+.
+
+Add Shapes with Swift Package Manager:
+
+```swift
+.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.2.0")
+```
+
+Then add the `Shapes` product to your app target. Live PencilKit snapping is part of the `Shapes` product.
+
+To bundle the Core ML model for fully offline Apple apps, also add `ShapesCoreMLResources` to your target.
+
+### Usage
+
+Create one `Shapes` and reuse it. Construction is cheap and non-blocking. The model loads on first use, or earlier if you call `download`.
 
 ```swift
 import Shapes
-import PencilKit
 
-// One line: live smart-shape snapping on a PencilKit canvas.
-canvasView.enableShapeSnapping()
-
-// Or recognize a stroke yourself:
-let recognizer = try ShapeRecognizer()
-if let shape = try recognizer.recognize(points: strokePoints) {
+let shapes = Shapes()
+if let shape = try await shapes.recognize(points: strokePoints) {
     switch shape {
-    case let .rectangle(corners):                       // [CGPoint]
-    case let .ellipse(center, semiMajor, semiMinor, rotation):
+    case let .rectangle(corners): ...       // [Point]
+    case let .ellipse(center, semiMajor, semiMinor, rotation): ...
     default: break
     }
 }
 ```
 
-## Features
+`recognize` accepts `[Point]` or, on Apple platforms, `[CGPoint]` and PencilKit `PKStroke`. On Apple, `Shape.path` gives a renderable `CGPath`.
 
-- Runs fully on-device using Core ML
-- Recognizes `line`, `rectangle`, `triangle`, `ellipse`, and `star` (and rejects scribbles)
-- Fits clean vector geometry and snaps it to axes, circles, squares, and 15° rotations
-- One-line PencilKit integration with a live preview that preserves undo/redo
-- Bundled 4-bit Core ML model is about 0.2 MB
-- Recognition is typically a few ms on modern devices
-- No network access required
-
-## Installation
-
-Add this package to your app with Swift Package Manager.
+Choose where the model comes from:
 
 ```swift
-.package(url: "https://github.com/Desert-Ant-Labs/shapes-swift.git", from: "0.1.0")
+let shapes = Shapes()                       // managed cache, download on demand
+let shapes = Shapes(directory: myModelDir)  // explicit model directory
+let shapes = Shapes(bundle: myBundle)       // bundled model resources
 ```
 
-Then add the `Shapes` product to your app target.
+Download ahead of time, for example from an onboarding screen:
 
-## Usage
+```swift
+let shapes = Shapes()
+if !shapes.isDownloaded() {
+    try await shapes.download { fraction in
+        print("\(Int(fraction * 100))%")
+    }
+}
+```
 
-### Live snapping (PencilKit)
-
-Enable it on your canvas: draw a shape, pause, and lift to snap. The swap is registered with the canvas's undo manager, so undo/redo keep working.
+Bundle the model in an Apple app:
 
 ```swift
 import Shapes
-import PencilKit
+import ShapesCoreMLResources
 
-let canvas = PKCanvasView()
-canvas.enableShapeSnapping()
-// canvas.disableShapeSnapping()
+let shapes = Shapes(bundle: ShapesCoreMLResourcesBundle.bundle)
 ```
 
-Available on iOS and visionOS (including Mac Catalyst).
-
-### Recognizing strokes directly
+Live PencilKit snapping (iOS/visionOS):
 
 ```swift
-let recognizer = try ShapeRecognizer()
+import Shapes
 
-// From raw points (canvas coordinates):
-let shape = try recognizer.recognize(points: points)   // Shape?
-
-// From a PencilKit stroke:
-let shape2 = try recognizer.recognize(pkStroke)         // Shape?
-
-// Render the result:
-if let shape { shapeLayer.path = shape.path }           // CGPath
+canvasView.enableShapeSnapping()   // pause while drawing to preview; lift to snap
+// Offline/instant: enableShapeSnapping(using: Shapes(bundle: ShapesCoreMLResourcesBundle.bundle))
 ```
 
-`recognize` returns `nil` when the stroke is rejected (not a shape) or degenerate.
+### Example
 
-## API
+[SwiftUI example app](Examples/ShapesSwiftExample)
 
-```swift
-public enum Shape: Sendable {
-    case line(from: CGPoint, to: CGPoint)
-    case rectangle(corners: [CGPoint])
-    case triangle(vertices: [CGPoint])
-    case ellipse(center: CGPoint, semiMajor: CGFloat, semiMinor: CGFloat, rotation: CGFloat)
-    case star(center: CGPoint, outerRadius: CGFloat, innerRadius: CGFloat,
-              rotation: CGFloat, pointCount: Int)
+## Android
 
-    public func outline(samples: Int = 96) -> [CGPoint]   // polyline (closed except .line)
-    public var path: CGPath                               // renderable path
+### Install
+
+Requirements: Android API 31+. The AAR contains prebuilt arm64-v8a and x86_64 native libraries.
+
+Shapes is published to Maven Central.
+
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
 }
 
-public final class ShapeRecognizer {
-    public init() throws
-    public func recognize(points: [CGPoint]) throws -> Shape?
-    public func recognize(_ stroke: PKStroke) throws -> Shape?   // PencilKit
-}
-
-// Live PencilKit snapping (iOS, visionOS)
-public extension PKCanvasView {
-    func enableShapeSnapping(configuration: ShapeSnappingConfiguration = .init())
-    func disableShapeSnapping()
-    var isShapeSnappingEnabled: Bool { get set }
-}
-
-public struct ShapeSnappingConfiguration: Sendable {
-    public var pauseDelay: TimeInterval   // delay before a preview appears (default 0.3)
-    public var previewOpacity: Float      // faded preview opacity (default 0.5)
+// build.gradle.kts
+dependencies {
+    implementation("ai.desertant:shapes:0.2.0")
 }
 ```
 
-## Example App
+`ai.desertant:shapes` downloads the model on demand and caches it under the app cache directory. To ship the LiteRT model inside your APK or app bundle instead, add the resources artifact and use `Shapes.bundled()`:
 
-A minimal example app is included in `Examples/ShapesExample`, a `PKCanvasView` with the system tool picker, undo/redo, and one-line shape snapping.
+```kotlin
+dependencies {
+    implementation("ai.desertant:shapes:0.2.0")
+    implementation("ai.desertant:shapes-tflite-resources:0.2.0")
+}
+```
 
-## Model
+### Usage
 
-The bundled model is published at [`desert-ant-labs/shapes`](https://huggingface.co/desert-ant-labs/shapes) on Hugging Face: full weights, the compiled Core ML build, and the model card.
+```kotlin
+import ai.desertant.shapes.Point
+import ai.desertant.shapes.Shapes
 
-## Other platforms
+val shapes = Shapes(context)                 // download on demand, cached
+val shape = shapes.recognize(strokePoints)   // Shape? (null if rejected)
+when (shape) {
+    is Shapes.Rectangle -> shape.corners
+    is Shapes.Ellipse -> shape.center
+    else -> {}
+}
+shapes.close()
+```
 
-Same model, native on each platform:
+`recognize` and `download` are `suspend` functions. Use `use` to close the native handle automatically:
 
-- [`shapes-kotlin`](https://github.com/Desert-Ant-Labs/shapes-kotlin): Kotlin for Android and JVM.
-- [`shapes-js`](https://github.com/Desert-Ant-Labs/shapes-js): JavaScript and TypeScript for Node and the browser.
-- Model weights and card: [`desert-ant-labs/shapes`](https://huggingface.co/desert-ant-labs/shapes)
+```kotlin
+Shapes(context).use { shapes ->
+    val shape = shapes.recognize(strokePoints)
+}
+```
+
+Download before first use:
+
+```kotlin
+val shapes = Shapes(context)
+if (!shapes.isDownloaded()) {
+    shapes.download()
+}
+```
+
+Use an explicit model directory or bundled resources:
+
+```kotlin
+val cached = Shapes(context)                         // managed cache
+val explicit = Shapes(context, directory = modelDir) // explicit model directory
+val offline = Shapes.bundled()                       // needs shapes-tflite-resources
+```
+
+### Example
+
+[Android example app](Examples/ShapesAndroidExample)
+
+## JavaScript and TypeScript
+
+### Install
+
+Requirements: a browser (or browser-like) runtime with `@litertjs/core` (LiteRT.js). Inference runs in the browser (XNNPACK-accelerated CPU by default, optional WebGPU); in plain Node the pipeline loads but the model session is unavailable.
+
+```bash
+npm install @desert-ant-labs/shapes @litertjs/core
+```
+
+`@litertjs/core` is an optional peer dependency.
+
+### Usage
+
+```ts
+import { Shapes } from "@desert-ant-labs/shapes";
+
+const shapes = await Shapes.load();               // download on demand, cached
+const shape = await shapes.recognize(points);     // [{x, y}, ...] or [x0, y0, ...]
+if (shape?.kind === "ellipse") shape.center;
+```
+
+Control loading:
+
+```js
+const shapes = await Shapes.load({
+  directory: "/var/cache/shapes",       // Node only, optional
+  onProgress: (fraction) => console.log(fraction),
+});
+```
+
+Bring your own LiteRT.js module, useful for browser bundlers and React Native:
+
+```js
+import * as litert from "@litertjs/core";
+import { Shapes } from "@desert-ant-labs/shapes";
+
+const shapes = await Shapes.load({ litert, litertWasmDir: "/path/to/@litertjs/core/wasm/" });
+```
+
+### Example
+
+[JavaScript examples](Examples/ShapesWasmExample)
+
+## Shapes
+
+All platforms return the same shape, discriminated by kind, or `null` when the stroke is rejected or degenerate:
+
+- `line(from, to)`
+- `rectangle(corners)` - four points around the perimeter
+- `triangle(vertices)` - three vertices
+- `ellipse(center, semiMajor, semiMinor, rotation)` - `rotation` in radians
+- `star(center, outerRadius, innerRadius, rotation, pointCount)`
+
+The field names and shape kinds are identical across Swift, Kotlin, and TypeScript. `minimumConfidence` (default `0`) raises the classifier threshold on top of each class's calibrated gate.
+
+## Model and caching
+
+The model artifacts are published at [`desert-ant-labs/shapes`](https://huggingface.co/desert-ant-labs/shapes) on Hugging Face. Each SDK pins the model revision to its own package version, and downloads are SHA-256 verified.
+
+Default behavior:
+
+- Swift: downloads the Core ML model on demand to a managed cache, or uses bundled `ShapesCoreMLResources`.
+- Android: downloads the LiteRT model on demand to app cache, or uses bundled `ai.desertant:shapes-tflite-resources`.
+- JavaScript: downloads the LiteRT model on `Shapes.load()` to the managed cache in Node (`~/.cache/desert-ant-models/...`) or browser cache storage when available.
+
+Passing an explicit `directory` makes that directory the model home. Existing valid files are adopted for offline use; otherwise Shapes downloads into that directory and reuses it later.
 
 ## License
 
-[Desert Ant Labs Source-Available License](https://license.desertant.ai/1.0). Free for
-most apps; a commercial license is required at scale. Full terms are at the link.
-Licensing: <licensing@desertant.ai>.
+[Desert Ant Labs Source-Available License](https://license.desertant.ai/1.0). Free for most apps; a commercial license is required at scale. Full terms are at the link. Licensing: <licensing@desertant.ai>.
+
+Third-party data and model attributions are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

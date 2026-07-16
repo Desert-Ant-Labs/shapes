@@ -1,0 +1,56 @@
+{
+  "name": "@desert-ant-labs/shapes",
+  "version": "0.2.0",
+  "description": "On-device single-stroke shape recognition for JavaScript with local WebAssembly and LiteRT.js inference.",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "homepage": "https://github.com/Desert-Ant-Labs/shapes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Desert-Ant-Labs/shapes.git",
+    "directory": "packages/shapes-node"
+  },
+  "keywords": [
+    "shape-recognition",
+    "handwriting",
+    "stroke",
+    "on-device",
+    "geometry",
+    "wasm"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "test": "node --test test/shapes.test.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./wasm": "./dist/ShapesWeb.wasm"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "dist",
+    "LICENSE.md"
+  ],
+  "dependencies": {
+    "@bjorn3/browser_wasi_shim": "^0.3.0"
+  },
+  "peerDependencies": {
+    "@litertjs/core": ">=2.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@litertjs/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@litertjs/core": "^2.5.2"
+  }
+}

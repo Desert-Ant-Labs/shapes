@@ -1,6 +1,4 @@
-import CoreGraphics
-import Foundation
-import simd
+import RealModule
 
 /// Geometry regularization ("smart shape" snapping). After the fitter produces
 /// an accurate fit, these cheap snaps clean the output to nice axes, angles,
@@ -71,48 +69,48 @@ extension Fitter {
         return abs(angle - nearest) <= thresholdDeg * .pi / 180 ? nearest : nil
     }
 
-    private static func v2(_ p: CGPoint) -> V2 { V2(Double(p.x), Double(p.y)) }
-    private static func point(_ v: V2) -> CGPoint { CGPoint(x: v.x, y: v.y) }
+    private static func v2(_ p: Point) -> V2 { V2(p.x, p.y) }
+    private static func point(_ v: V2) -> Point { Point(x: v.x, y: v.y) }
 
     // MARK: Line
 
-    private static func snapLine(_ from: CGPoint, _ to: CGPoint, _ c: SnapConfig) -> Shape {
+    private static func snapLine(_ from: Point, _ to: Point, _ c: SnapConfig) -> Shape {
         let a = v2(from), b = v2(to)
-        let ang = atan2(b.y - a.y, b.x - a.x)
+        let ang = Double.atan2(y: b.y - a.y, x: b.x - a.x)
         guard let snapped = snapToAxis(ang, thresholdDeg: c.lineAxisThresholdDeg) else {
             return .line(from: from, to: to)
         }
         let mid = (a + b) / 2
-        let half = simd_length(b - a) / 2
-        let dir = V2(cos(snapped), sin(snapped))
+        let half = (b - a).length / 2
+        let dir = V2(Double.cos(snapped), Double.sin(snapped))
         return .line(from: point(mid - half * dir), to: point(mid + half * dir))
     }
 
     // MARK: Ellipse
 
     private static func snapEllipse(
-        _ center: CGPoint, _ major: CGFloat, _ minor: CGFloat, _ rotation: CGFloat,
+        _ center: Point, _ major: Double, _ minor: Double, _ rotation: Double,
         _ c: SnapConfig
     ) -> Shape {
-        let maj = Double(major), min_ = Double(minor)
+        let maj = major, min_ = minor
         let hi = Swift.max(maj, min_), lo = Swift.min(maj, min_)
         if c.ellipseCircleRatio > 0, hi > 0, lo / hi >= 1 - c.ellipseCircleRatio {
-            let r = CGFloat((maj + min_) / 2)
+            let r = (maj + min_) / 2
             return .ellipse(center: center, semiMajor: r, semiMinor: r, rotation: 0)
         }
-        let rot = snapToIncrement(Double(rotation), incrementDeg: c.ellipseRotationIncrementDeg)
-        return .ellipse(center: center, semiMajor: major, semiMinor: minor, rotation: CGFloat(rot))
+        let rot = snapToIncrement(rotation, incrementDeg: c.ellipseRotationIncrementDeg)
+        return .ellipse(center: center, semiMajor: major, semiMinor: minor, rotation: rot)
     }
 
     // MARK: Rectangle
 
-    private static func snapRectangle(_ corners: [CGPoint], _ c: SnapConfig) -> Shape {
+    private static func snapRectangle(_ corners: [Point], _ c: SnapConfig) -> Shape {
         guard corners.count == 4 else { return .rectangle(corners: corners) }
         let p = corners.map(v2)
         let center = (p[0] + p[1] + p[2] + p[3]) / 4
-        var w = simd_length(p[1] - p[0])
-        var h = simd_length(p[3] - p[0])
-        var ang = atan2((p[1] - p[0]).y, (p[1] - p[0]).x)
+        var w = (p[1] - p[0]).length
+        var h = (p[3] - p[0]).length
+        var ang = Double.atan2(y: (p[1] - p[0]).y, x: (p[1] - p[0]).x)
 
         let hi = Swift.max(w, h), lo = Swift.min(w, h)
         if c.rectangleSquareRatio > 0, hi > 0, lo / hi >= 1 - c.rectangleSquareRatio {
@@ -121,7 +119,7 @@ extension Fitter {
         }
         ang = snapToIncrement(ang, incrementDeg: c.rectangleRotationIncrementDeg)
 
-        let r = rot(ang)
+        let r = Mat2.rotation(ang)
         let hw = w / 2, hh = h / 2
         let local = [V2(-hw, -hh), V2(hw, -hh), V2(hw, hh), V2(-hw, hh)]
         return .rectangle(corners: local.map { point(center + r * $0) })
@@ -129,14 +127,14 @@ extension Fitter {
 
     // MARK: Triangle
 
-    private static func snapTriangle(_ verts: [CGPoint], _ c: SnapConfig) -> Shape {
+    private static func snapTriangle(_ verts: [Point], _ c: SnapConfig) -> Shape {
         guard verts.count == 3 else { return .triangle(vertices: verts) }
         var v = verts.map(v2)
         let centroid = (v[0] + v[1] + v[2]) / 3
 
-        let lAB = simd_length(v[0] - v[1])
-        let lBC = simd_length(v[1] - v[2])
-        let lCA = simd_length(v[2] - v[0])
+        let lAB = (v[0] - v[1]).length
+        let lBC = (v[1] - v[2]).length
+        let lCA = (v[2] - v[0]).length
         let sides = [lAB, lBC, lCA]
         let mx = sides.max() ?? 0, mn = sides.min() ?? 0
 
@@ -150,17 +148,17 @@ extension Fitter {
     }
 
     private static func makeEquilateral(_ v: [V2], centroid c: V2) -> [V2] {
-        let r = (simd_length(v[0] - c) + simd_length(v[1] - c) + simd_length(v[2] - c)) / 3
+        let r = ((v[0] - c).length + (v[1] - c).length + (v[2] - c).length) / 3
         // Circular mean of (angle_i - i*120°) gives a stable base orientation.
         var sx = 0.0, sy = 0.0
         for i in 0..<3 {
-            let a = atan2(v[i].y - c.y, v[i].x - c.x) - Double(i) * 2 * Double.pi / 3
-            sx += cos(a); sy += sin(a)
+            let a = Double.atan2(y: v[i].y - c.y, x: v[i].x - c.x) - Double(i) * 2 * Double.pi / 3
+            sx += Double.cos(a); sy += Double.sin(a)
         }
-        let base = atan2(sy, sx)
+        let base = Double.atan2(y: sy, x: sx)
         return (0..<3).map { i in
             let a = base + Double(i) * 2 * Double.pi / 3
-            return c + r * V2(cos(a), sin(a))
+            return c + r * V2(Double.cos(a), Double.sin(a))
         }
     }
 
@@ -178,7 +176,7 @@ extension Fitter {
         let avg = (best.l1 + best.l2) / 2
         func leg(_ to: Int) -> V2 {
             let d = v[to] - apex
-            let n = simd_length(d)
+            let n = d.length
             return apex + (n > 0 ? d / n : d) * avg
         }
         var out = v
@@ -196,14 +194,14 @@ extension Fitter {
     /// nearest axis, when within threshold.
     private static func alignTriangleToAxis(_ v: [V2], thresholdDeg: Double) -> Shape {
         let edges = [(v[0], v[1]), (v[1], v[2]), (v[2], v[0])]
-        let longest = edges.max { simd_length($0.1 - $0.0) < simd_length($1.1 - $1.0) }!
+        let longest = edges.max { ($0.1 - $0.0).length < ($1.1 - $1.0).length }!
         let dir = longest.1 - longest.0
-        let ang = atan2(dir.y, dir.x)
+        let ang = Double.atan2(y: dir.y, x: dir.x)
         guard let snapped = snapToAxis(ang, thresholdDeg: thresholdDeg) else {
             return .triangle(vertices: v.map(point))
         }
         let centroid = (v[0] + v[1] + v[2]) / 3
-        let r = rot(snapped - ang)
+        let r = Mat2.rotation(snapped - ang)
         let out = v.map { centroid + r * ($0 - centroid) }
         return .triangle(vertices: out.map(point))
     }

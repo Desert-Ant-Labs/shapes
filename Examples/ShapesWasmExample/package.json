@@ -1,0 +1,17 @@
+{
+  "name": "shapes-wasm-example",
+  "private": true,
+  "type": "module",
+  "description": "Node and headless-browser examples for @desert-ant-labs/shapes",
+  "scripts": {
+    "node-example": "node main.mjs",
+    "browser-example": "node browser-test.mjs"
+  },
+  "dependencies": {
+    "@desert-ant-labs/shapes": "^0.2.0",
+    "@litertjs/core": "^2.5.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
