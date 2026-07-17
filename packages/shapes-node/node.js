@@ -25,8 +25,8 @@ function nativeDir() {
   if (!fs.existsSync(dir)) {
     throw new Error(
       `@desert-ant-labs/shapes: no prebuilt native for ${key}. ` +
-        `Supported: linux-x64${process.platform === "win32" ? " (Windows support pending)" : ""}. ` +
-        `Use the Swift or browser build for this platform.`);
+        `Supported server-side targets: linux-x64, linux-arm64, darwin-arm64. ` +
+        `Use the Swift package or a browser on this platform.`);
   }
   return dir;
 }

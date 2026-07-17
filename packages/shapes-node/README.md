@@ -48,6 +48,7 @@ raises the classifier threshold on top of each class's calibrated gate.
 
 ### Platforms
 
-Server-side native builds ship for **linux-x64** (LiteRT) and **darwin-arm64**
-(Core ML). Other platforms fall back to a clear error at `load()`; use the Swift
-package or a browser for those. The browser build runs anywhere with WebAssembly.
+Server-side native builds ship for **linux-x64**, **linux-arm64** (LiteRT), and
+**darwin-arm64** (Core ML). Other platforms fall back to a clear error at
+`load()`; use the Swift package or a browser for those. The browser build runs
+anywhere with WebAssembly.

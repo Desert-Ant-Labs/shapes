@@ -27,6 +27,6 @@ kotlin {
 }
 
 dependencies {
-    implementation("ai.desertant:shapes:0.4.0")
+    implementation("ai.desertant:shapes:0.4.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }

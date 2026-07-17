@@ -65,16 +65,22 @@ set -euo pipefail
 [ "$(uname)" = "Darwin" ] && exit 0  # Apple uses Core ML; no LiteRT needed
 LITERT_VER="${usage_litert_version:-2.1.6}"
 LITERT_GPU="${usage_gpu:-}"   # non-empty (--gpu) also ships the accelerator sibling
-dest=Vendor/litert/lib/linux-x64
+# Match the vendored lib to the host arch (linux-x64 or linux-arm64).
+case "$(uname -m)" in
+  x86_64|amd64) LARCH=linux-x64; WHEEL_PLAT=x86_64-manylinux_2_28;;
+  aarch64|arm64) LARCH=linux-arm64; WHEEL_PLAT=aarch64-manylinux_2_28;;
+  *) echo "error: unsupported arch $(uname -m)" >&2; exit 1;;
+esac
+dest="Vendor/litert/lib/$LARCH"
 if [ -f "$dest/libLiteRt.so" ]; then exit 0; fi
 mkdir -p "$dest"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-echo "Fetching ai-edge-litert $LITERT_VER (linux-x64 libLiteRt.so, one-time)..."
-# uv resolves the linux x86_64 wheel for the target platform (no host Python
+echo "Fetching ai-edge-litert $LITERT_VER ($LARCH libLiteRt.so, one-time)..."
+# uv resolves the matching Linux wheel for the target platform (no host Python
 # needed) and unpacks it into a throwaway target dir; the runtime .so ships at
 # ai_edge_litert/libLiteRt.so.
-uv pip install --python-platform x86_64-manylinux_2_28 --python-version 3.12 \\
+uv pip install --python-platform "$WHEEL_PLAT" --python-version 3.12 \\
     --target "$tmp/site" --only-binary=:all: "ai-edge-litert==$LITERT_VER" >/dev/null
 [ -f "$tmp/site/ai_edge_litert/libLiteRt.so" ] || { echo "error: libLiteRt.so not in ai-edge-litert wheel" >&2; exit 1; }
 cp "$tmp/site/ai_edge_litert/libLiteRt.so" "$dest/"
@@ -100,7 +106,7 @@ set -euo pipefail
 if [ "$(uname)" = "Darwin" ]; then
     swift build
 else
-    DAL_INFERENCE_LITERT=1 swift build -Xlinker -LVendor/litert/lib/linux-x64
+    DAL_INFERENCE_LITERT=1 swift build -Xlinker -LVendor/litert/lib/$([ "$(uname -m)" = aarch64 ] && echo linux-arm64 || echo linux-x64)
 fi
 """
 
@@ -127,6 +133,12 @@ set -euo pipefail
 # the vendored libLiteRt.so, static Swift+Foundation so the .so is
 # self-contained); macOS uses Core ML (.mlmodelc) against the OS-provided Swift
 # runtime and system frameworks (nothing extra to ship).
+#
+# Two Linux distribution rules (learned the hard way): build on an OLD glibc
+# base (the published libs are built in a swift:6.3.2-jammy container = glibc
+# 2.35, so they run on Ubuntu 22.04+/Debian 12+, not just the build host), and
+# link `-z nodelete` so the process doesn't dlclose the static Swift runtime at
+# shutdown (which otherwise segfaults on natural exit on some glibc versions).
 ARCH=$(uname -m); case "$ARCH" in x86_64|amd64) NARCH=x64;; arm64|aarch64) NARCH=arm64;; *) NARCH=$ARCH;; esac
 if [ "$(uname)" = "Darwin" ]; then
     KEY="darwin-$NARCH"; dest="packages/shapes-node/native/$KEY"; rm -rf "$dest" && mkdir -p "$dest"
@@ -144,7 +156,8 @@ else
     done
     LARCH=$([ "$NARCH" = "x64" ] && echo linux-x64 || echo linux-arm64)
     DAL_INFERENCE_LITERT=1 swift build -c release --product ShapesNode -Xswiftc -static-stdlib \\
-        -Xlinker "-L$tmp" -Xlinker "-LVendor/litert/lib/$LARCH" -Xlinker -rpath -Xlinker '$ORIGIN'
+        -Xlinker "-L$tmp" -Xlinker "-LVendor/litert/lib/$LARCH" -Xlinker -rpath -Xlinker '$ORIGIN' \\
+        -Xlinker -z -Xlinker nodelete
     cp ".build/release/libShapesNode.so" "$dest/"
     cp "Vendor/litert/lib/$LARCH/libLiteRt.so" "$dest/"
 fi
@@ -220,7 +233,8 @@ set -euo pipefail
 if [ "$(uname)" = "Darwin" ]; then
     swift test
 else
-    DAL_INFERENCE_LITERT=1 LD_LIBRARY_PATH=Vendor/litert/lib/linux-x64 swift test -Xlinker -LVendor/litert/lib/linux-x64
+    LARCH=$([ "$(uname -m)" = aarch64 ] && echo linux-arm64 || echo linux-x64)
+    DAL_INFERENCE_LITERT=1 LD_LIBRARY_PATH="Vendor/litert/lib/$LARCH" swift test -Xlinker "-LVendor/litert/lib/$LARCH"
 fi
 """
 
