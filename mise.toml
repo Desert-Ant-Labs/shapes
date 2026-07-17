@@ -62,9 +62,29 @@ flag "--litert-version <ver>" help="LiteRT (ai-edge-litert) version to vendor" d
 '''
 run = """
 set -euo pipefail
-[ "$(uname)" = "Darwin" ] && exit 0  # Apple uses Core ML; no LiteRT needed
 LITERT_VER="${usage_litert_version:-2.1.6}"
 LITERT_GPU="${usage_gpu:-}"   # non-empty (--gpu) also ships the accelerator sibling
+# Apple hosts: the Swift SDK uses Core ML, but the native server-side Node core
+# uses LiteRT so it consumes the same .tflite as Linux. Vendor the macOS
+# libLiteRt.dylib (from the ai-edge-litert wheel) for that native build.
+if [ "$(uname)" = "Darwin" ]; then
+  case "$(uname -m)" in
+    arm64|aarch64) DARCH=darwin-arm64; WHEEL_PLAT=aarch64-apple-darwin;;
+    x86_64) DARCH=darwin-x64; WHEEL_PLAT=x86_64-apple-darwin;;
+    *) echo "error: unsupported arch $(uname -m)" >&2; exit 1;;
+  esac
+  dest="Vendor/litert/lib/$DARCH"
+  if [ -f "$dest/libLiteRt.dylib" ]; then exit 0; fi
+  mkdir -p "$dest"
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  echo "Fetching ai-edge-litert $LITERT_VER ($DARCH libLiteRt.dylib, one-time)..."
+  uv pip install --python-platform "$WHEEL_PLAT" --python-version 3.12 \\
+      --target "$tmp/site" --only-binary=:all: "ai-edge-litert==$LITERT_VER" >/dev/null
+  [ -f "$tmp/site/ai_edge_litert/libLiteRt.dylib" ] || { echo "error: libLiteRt.dylib not in ai-edge-litert wheel" >&2; exit 1; }
+  cp "$tmp/site/ai_edge_litert/libLiteRt.dylib" "$dest/"
+  ls -la "$dest"
+  exit 0
+fi
 # Match the vendored lib to the host arch (linux-x64 or linux-arm64).
 case "$(uname -m)" in
   x86_64|amd64) LARCH=linux-x64; WHEEL_PLAT=x86_64-manylinux_2_28;;
@@ -129,10 +149,12 @@ set -euo pipefail
 # ABI). koffi in packages/shapes-node binds shapes_* over it. Cross-OS builds
 # aren't possible, so run this on each target OS; publish gathers them.
 #
-# Backend per OS matches the rest of the SDK: Linux uses LiteRT (.tflite, links
-# the vendored libLiteRt.so, static Swift+Foundation so the .so is
-# self-contained); macOS uses Core ML (.mlmodelc) against the OS-provided Swift
-# runtime and system frameworks (nothing extra to ship).
+# Backend for the native Node core is LiteRT on every OS so it consumes the same
+# bundled .tflite the browser/Linux paths use: Linux links the vendored
+# libLiteRt.so (static Swift+Foundation so the .so is self-contained); macOS
+# links the vendored libLiteRt.dylib against the OS-provided Swift runtime. Both
+# ship libLiteRt next to libShapesNode (loaded first by node.js). (The Apple
+# *Swift* SDK still uses Core ML; only this server-side native uses LiteRT.)
 #
 # Two Linux distribution rules (learned the hard way): build on an OLD glibc
 # base (the published libs are built in a swift:6.3.2-jammy container = glibc
@@ -142,8 +164,11 @@ set -euo pipefail
 ARCH=$(uname -m); case "$ARCH" in x86_64|amd64) NARCH=x64;; arm64|aarch64) NARCH=arm64;; *) NARCH=$ARCH;; esac
 if [ "$(uname)" = "Darwin" ]; then
     KEY="darwin-$NARCH"; dest="packages/shapes-node/native/$KEY"; rm -rf "$dest" && mkdir -p "$dest"
-    swift build -c release --product ShapesNode -Xlinker -rpath -Xlinker @loader_path
+    DARCH=$([ "$NARCH" = "x64" ] && echo darwin-x64 || echo darwin-arm64)
+    DAL_INFERENCE_LITERT=1 swift build -c release --product ShapesNode \\
+        -Xlinker "-LVendor/litert/lib/$DARCH" -Xlinker -rpath -Xlinker @loader_path
     cp ".build/release/libShapesNode.dylib" "$dest/"
+    cp "Vendor/litert/lib/$DARCH/libLiteRt.dylib" "$dest/"
 else
     KEY="linux-$NARCH"; dest="packages/shapes-node/native/$KEY"; rm -rf "$dest" && mkdir -p "$dest"
     # Static Foundation on Linux autolinks -lcurl/-lxml2/-lz; provide dev-name
