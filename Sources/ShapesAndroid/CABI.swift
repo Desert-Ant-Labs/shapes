@@ -10,6 +10,7 @@ import PlatformSupport
 //
 //   shapes_create(cacheRootUTF8, dirUTF8|NULL)         -> handle | NULL
 //   shapes_create_bundled(metaUTF8, model,len)         -> handle | NULL
+//   shapes_create_bundled_path(metaUTF8, modelPath)    -> handle | NULL
 //   shapes_is_downloaded(handle)                       -> 0/1
 //   shapes_download(handle)                            -> 0/-1   (blocks)
 //   shapes_run(handle, pointBytes,len, minConf)        -> buffer | NULL
@@ -57,6 +58,23 @@ public func shapes_create_bundled(
     guard let assets = try? ModelAssets(
         metaJSON: String(cString: metaJSON),
         modelBytes: Array(UnsafeBufferPointer(start: model, count: Int(modelLen)))) else { return nil }
+    return Unmanaged.passRetained(Handle(Shapes(assets: assets))).toOpaque()
+}
+
+/// Create a recognizer from a bundled model **file path** (the Node server-side
+/// native, Linux + macOS). `inferenceSession(modelPath:)` inside picks Core ML
+/// on Apple hosts (a `.mlmodelc` directory) and LiteRT on Linux (a `.tflite`),
+/// so one primitive covers both runtimes. The meta sidecar still crosses as a
+/// string; only the model artifact is a path (mmap, no giant copy).
+@_cdecl("shapes_create_bundled_path")
+public func shapes_create_bundled_path(
+    _ metaJSON: UnsafePointer<CChar>?,
+    _ modelPath: UnsafePointer<CChar>?
+) -> UnsafeMutableRawPointer? {
+    guard let metaJSON, let modelPath else { return nil }
+    guard let assets = try? ModelAssets(
+        metaJSON: String(cString: metaJSON),
+        modelPath: String(cString: modelPath)) else { return nil }
     return Unmanaged.passRetained(Handle(Shapes(assets: assets))).toOpaque()
 }
 

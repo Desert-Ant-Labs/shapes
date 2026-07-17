@@ -44,6 +44,18 @@ public struct ModelAssets: Sendable {
             session: try inferenceSession(modelBytes: modelBytes))
     }
 
+    /// Bindings entry point: load the artifact from a file path (the Node
+    /// server-side native's bundled path). `inferenceSession(modelPath:)`
+    /// selects Core ML on Apple hosts (from the `.mlmodelc` directory) and
+    /// LiteRT on Linux (from the `.tflite`), so this one call covers both, the
+    /// unified Node bundling primitive. It is also mmap-based, sidestepping the
+    /// from-bytes buffer-ownership pitfall.
+    public init(metaJSON: String, modelPath: String) throws {
+        self.init(
+            metaJSON: metaJSON,
+            session: try inferenceSession(modelPath: modelPath))
+    }
+
     @_spi(ShapesBindings)
     public init(metaJSON: String, session: any InferenceSession) {
         self.metaJSON = metaJSON

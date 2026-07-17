@@ -37,7 +37,7 @@ let jsDependencies: [Package.Dependency] = noJavaScriptKit ? [] : [
 let packageDependencies: [Package.Dependency] = [
     // Reusable cross-platform primitives (JSON, ModelStore, Inference,
     // FFIBuffer, HostBridge, PlatformSupport, ModelResources).
-    .package(url: "https://github.com/Desert-Ant-Labs/desert-ant-core.git", from: "0.2.5"),
+    .package(url: "https://github.com/Desert-Ant-Labs/desert-ant-core.git", from: "0.2.4"),
     // Portable transcendentals (`Double.cos`, `Double.atan2`, ...) for the
     // geometry math; the stdlib has none and importing libm per platform is
     // messier (and pulls Foundation on Android/wasm).

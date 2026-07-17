@@ -1,6 +1,6 @@
 {
   "name": "@desert-ant-labs/shapes",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "On-device single-stroke shape recognition for JavaScript. Runs in the browser (WebAssembly + LiteRT.js) and server-side in Node (native), from one import.",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE.md",

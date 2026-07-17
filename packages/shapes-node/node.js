@@ -16,9 +16,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // The prebuilt native for this host lives in native/<platform>-<arch>/ next to
 // this file (built by `mise run build-node`): the self-contained Swift core
-// (libShapesNode) plus the LiteRT runtime it links (libLiteRt). The core's
-// runpath is `$ORIGIN`, so the two sit side by side and resolve with no
-// LD_LIBRARY_PATH.
+// (libShapesNode). On Linux it also ships the LiteRT runtime it links
+// (libLiteRt) beside it; the core's runpath is `$ORIGIN`, so the two resolve
+// with no LD_LIBRARY_PATH. On macOS the core uses Core ML (part of the OS), so
+// there is no extra runtime to ship.
 function nativeDir() {
   const key = `${process.platform}-${process.arch}`;
   const dir = path.join(HERE, "native", key);
@@ -44,7 +45,7 @@ function loadLib() {
   const core = koffi.load(path.join(dir, CORE[process.platform] || CORE.linux));
   lib = {
     create: core.func("void* shapes_create(const char*, const char*)"),
-    createBundled: core.func("void* shapes_create_bundled(const char*, uint8_t*, int)"),
+    createBundledPath: core.func("void* shapes_create_bundled_path(const char*, const char*)"),
     isDownloaded: core.func("int shapes_is_downloaded(void*)"),
     download: core.func("int shapes_download(void*)"),
     run: core.func("void* shapes_run(void*, uint8_t*, int, double)"),
@@ -109,12 +110,15 @@ export class Shapes {
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : undefined;
     let handle;
     if (options.directory == null) {
-      // Shapes is small, so the npm package includes the LiteRT model by
-      // default. No network or cache setup is needed for normal server use.
+      // Shapes is small, so the npm package ships the model and loads it by
+      // default. The server-side native runs LiteRT on Linux (from the .tflite)
+      // and Core ML on macOS (from the compiled .mlmodelc directory); pass this
+      // host's artifact by path - one primitive, both runtimes, no network or
+      // cache setup.
       const modelDir = path.join(HERE, "model");
       const meta = fs.readFileSync(path.join(modelDir, "shapes_meta.json"), "utf8");
-      const model = new Uint8Array(fs.readFileSync(path.join(modelDir, "shapes.tflite")));
-      handle = l.createBundled(meta, model, model.byteLength);
+      const artifact = process.platform === "darwin" ? "shapes.mlmodelc" : "shapes.tflite";
+      handle = l.createBundledPath(meta, path.join(modelDir, artifact));
       onProgress?.(1);
     } else {
       // An explicit directory opts into adopt-or-download behavior.
