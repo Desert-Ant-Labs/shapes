@@ -5,10 +5,10 @@
 // desert-ant-core's `inferenceSession` factory.
 import Inference
 import ModelStore
-#if canImport(ShapesCoreMLResources)
+#if SHAPES_BUNDLED_MODEL && canImport(ShapesCoreMLResources)
 import ShapesCoreMLResources
 #endif
-#if canImport(ShapesTFLiteResources)
+#if SHAPES_BUNDLED_MODEL && canImport(ShapesTFLiteResources)
 import ShapesTFLiteResources
 #endif
 
@@ -111,7 +111,7 @@ public extension Shapes {
     }
 
     private static func hasBundledDefaultAssets() -> Bool {
-#if canImport(ShapesCoreMLResources) || canImport(ShapesTFLiteResources)
+#if SHAPES_BUNDLED_MODEL
         true
 #else
         false
@@ -159,9 +159,9 @@ extension ModelAssets {
     /// Build from the package's default bundled resource target, when this
     /// platform has one linked.
     static func defaultBundle() throws -> ModelAssets? {
-#if canImport(ShapesCoreMLResources)
+#if SHAPES_BUNDLED_MODEL && canImport(ShapesCoreMLResources)
         return try shapes(bundle: ShapesCoreMLResourcesBundle.bundle)
-#elseif canImport(ShapesTFLiteResources)
+#elseif SHAPES_BUNDLED_MODEL && canImport(ShapesTFLiteResources)
         return try shapes(bundle: ShapesTFLiteResourcesBundle.bundle)
 #else
         return nil

@@ -48,7 +48,11 @@ Add Shapes with Swift Package Manager:
 
 Then add the `Shapes` product to your app target. Live PencilKit snapping is part of the `Shapes` product.
 
-The Core ML model is bundled by default because Shapes is small. `ShapesCoreMLResources` remains available for explicit bundle construction and tests.
+The Core ML model is bundled by default because Shapes is small. `ShapesCoreMLResources` remains available for explicit bundle construction and tests. SwiftPM consumers who prefer on-demand download or an explicit model directory can disable the default trait:
+
+```swift
+.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.4.3", traits: [])
+```
 
 ### Usage
 
