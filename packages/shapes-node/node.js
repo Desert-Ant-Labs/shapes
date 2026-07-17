@@ -15,7 +15,7 @@ const koffi = require("koffi");
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // The prebuilt native for this host lives in native/<platform>-<arch>/ next to
-// this file (built by `mise run node-natives`): the self-contained Swift core
+// this file (built by `mise run build-node`): the self-contained Swift core
 // (libShapesNode) plus the LiteRT runtime it links (libLiteRt). The core's
 // runpath is `$ORIGIN`, so the two sit side by side and resolve with no
 // LD_LIBRARY_PATH.

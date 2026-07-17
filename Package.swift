@@ -57,7 +57,7 @@ let packageProducts: [Product] = [
     // Android JNI library (built by `mise run android-natives`).
     .library(name: "ShapesAndroid", type: .dynamic, targets: ["ShapesAndroid"]),
     // Native library for the Node.js server-side backend (built by
-    // `mise run node-natives`). Shares the ShapesAndroid target: on a host
+    // `mise run build-node`). Shares the ShapesAndroid target: on a host
     // (Linux/macOS) triple only the C ABI in `CABI.swift` compiles, since
     // `AndroidJNI.swift` is `#if os(Android)`; koffi in packages/shapes-node
     // binds the `shapes_*` C ABI over the resulting libShapesNode.

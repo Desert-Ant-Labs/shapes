@@ -1,10 +1,11 @@
 # Reproducible build/test/publish entry points for shapes: one file, three
-# platforms, no separate shell scripts.
+# platforms (Swift, Android, Web/Node), no separate shell scripts.
 #
+#   mise run build           # every build artifact (depends on the four below)
 #   mise run build-swift     # SwiftPM build (Core ML on Apple hosts, LiteRT on Linux)
 #   mise run build-android   # Android AAR -> packages/shapes-kotlin/build/outputs/aar
 #   mise run build-web       # browser WebAssembly core -> packages/shapes-node/dist
-#   mise run node-natives    # server-side native core -> packages/shapes-node/native/<platform> (run per OS)
+#   mise run build-node      # server-side native core -> packages/shapes-node/native/<os>-<arch> (run per OS)
 #
 #   mise run test            # every suite (depends on the three below)
 #   mise run test-swift      #   the SwiftPM suite (Core ML on macOS, LiteRT on Linux)
@@ -15,9 +16,11 @@
 #   mise run publish-android # ai.desertant:shapes (+ shapes-tflite-resources) -> Maven Central
 #   mise run publish-web     # @desert-ant-labs/shapes -> npm
 #
-# `mise run android-natives` (internal) builds the Android native library into
-# jniLibs; it is what the Gradle AAR build invokes before packaging. See the
-# README for the task list and `mise.local.toml` secret setup.
+# The Web/Node npm package is isomorphic, so it has two build artifacts: the
+# portable browser wasm (build-web) and a per-OS native core (build-node, run on
+# each target OS; the release gathers them). `mise run android-natives`
+# (internal) builds the Android native into jniLibs and is what the Gradle AAR
+# build invokes before packaging. See the README and `mise.local.toml` setup.
 #
 # The release version is single-sourced from packages/shapes-node/package.json;
 # the Gradle module versions must match it (publish tasks verify).
@@ -52,64 +55,39 @@ swift = "6.3.3"
 
 # ---------------------------------------------------------------- build
 
+[tasks.build]
+description = "Build every platform artifact (swift + android + web + node)"
+depends = ["build-swift", "build-android", "build-web", "build-node"]
+
 [tasks.litert-libs]
 hide = true
 dir = "{{ config_root }}"
 shell = "bash -c"
-usage = '''
-flag "--gpu" help="Also vendor the LiteRT GPU accelerator sibling (for GPU models; shapes runs on CPU)"
-flag "--litert-version <ver>" help="LiteRT (ai-edge-litert) version to vendor" default="2.1.6"
-'''
 run = """
 set -euo pipefail
-LITERT_VER="${usage_litert_version:-2.1.6}"
-LITERT_GPU="${usage_gpu:-}"   # non-empty (--gpu) also ships the accelerator sibling
-# Apple hosts: the Swift SDK uses Core ML, but the native server-side Node core
-# uses LiteRT so it consumes the same .tflite as Linux. Vendor the macOS
-# libLiteRt.dylib (from the ai-edge-litert wheel) for that native build.
-if [ "$(uname)" = "Darwin" ]; then
-  case "$(uname -m)" in
-    arm64|aarch64) DARCH=darwin-arm64; WHEEL_PLAT=aarch64-apple-darwin;;
-    x86_64) DARCH=darwin-x64; WHEEL_PLAT=x86_64-apple-darwin;;
-    *) echo "error: unsupported arch $(uname -m)" >&2; exit 1;;
-  esac
-  dest="Vendor/litert/lib/$DARCH"
-  if [ -f "$dest/libLiteRt.dylib" ]; then exit 0; fi
-  mkdir -p "$dest"
-  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-  echo "Fetching ai-edge-litert $LITERT_VER ($DARCH libLiteRt.dylib, one-time)..."
-  uv pip install --python-platform "$WHEEL_PLAT" --python-version 3.12 \\
-      --target "$tmp/site" --only-binary=:all: "ai-edge-litert==$LITERT_VER" >/dev/null
-  [ -f "$tmp/site/ai_edge_litert/libLiteRt.dylib" ] || { echo "error: libLiteRt.dylib not in ai-edge-litert wheel" >&2; exit 1; }
-  cp "$tmp/site/ai_edge_litert/libLiteRt.dylib" "$dest/"
-  ls -la "$dest"
-  exit 0
-fi
-# Match the vendored lib to the host arch (linux-x64 or linux-arm64).
-case "$(uname -m)" in
-  x86_64|amd64) LARCH=linux-x64; WHEEL_PLAT=x86_64-manylinux_2_28;;
-  aarch64|arm64) LARCH=linux-arm64; WHEEL_PLAT=aarch64-manylinux_2_28;;
-  *) echo "error: unsupported arch $(uname -m)" >&2; exit 1;;
+# Vendor the host's LiteRT runtime into Vendor/litert/lib/<os>-<arch>/, extracted
+# from the ai-edge-litert wheel (CPU/XNNPACK; shapes runs on CPU). Linux and the
+# server-side Node native link it; the Apple *Swift* SDK uses Core ML instead,
+# but the Apple Node native uses LiteRT so it loads the same .tflite as Linux.
+LITERT_VER=2.1.6
+case "$(uname)|$(uname -m)" in
+  Darwin*arm64|Darwin*aarch64) KEY=darwin-arm64; WHEEL=aarch64-apple-darwin; LIB=libLiteRt.dylib;;
+  Darwin*x86_64) KEY=darwin-x64; WHEEL=x86_64-apple-darwin; LIB=libLiteRt.dylib;;
+  *x86_64|*amd64) KEY=linux-x64; WHEEL=x86_64-manylinux_2_28; LIB=libLiteRt.so;;
+  *aarch64|*arm64) KEY=linux-arm64; WHEEL=aarch64-manylinux_2_28; LIB=libLiteRt.so;;
+  *) echo "error: unsupported host $(uname) $(uname -m)" >&2; exit 1;;
 esac
-dest="Vendor/litert/lib/$LARCH"
-if [ -f "$dest/libLiteRt.so" ]; then exit 0; fi
+dest="Vendor/litert/lib/$KEY"
+[ -f "$dest/$LIB" ] && exit 0
 mkdir -p "$dest"
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-echo "Fetching ai-edge-litert $LITERT_VER ($LARCH libLiteRt.so, one-time)..."
-# uv resolves the matching Linux wheel for the target platform (no host Python
-# needed) and unpacks it into a throwaway target dir; the runtime .so ships at
-# ai_edge_litert/libLiteRt.so.
-uv pip install --python-platform "$WHEEL_PLAT" --python-version 3.12 \\
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+echo "Fetching ai-edge-litert $LITERT_VER ($KEY $LIB, one-time)..."
+# uv resolves the matching wheel for the target platform (no host Python needed)
+# and unpacks it; the runtime lib ships at ai_edge_litert/$LIB.
+uv pip install --python-platform "$WHEEL" --python-version 3.12 \\
     --target "$tmp/site" --only-binary=:all: "ai-edge-litert==$LITERT_VER" >/dev/null
-[ -f "$tmp/site/ai_edge_litert/libLiteRt.so" ] || { echo "error: libLiteRt.so not in ai-edge-litert wheel" >&2; exit 1; }
-cp "$tmp/site/ai_edge_litert/libLiteRt.so" "$dest/"
-# GPU models (--gpu) also ship the WebGPU accelerator sibling, which core's
-# LiteRTSession (.auto default) then uses automatically. shapes runs on CPU
-# (XNNPACK), so by default it ships libLiteRt.so only and stays CPU.
-if [ -n "$LITERT_GPU" ] && [ -f "$tmp/site/ai_edge_litert/libLiteRtWebGpuAccelerator.so" ]; then
-    cp "$tmp/site/ai_edge_litert/libLiteRtWebGpuAccelerator.so" "$dest/"
-fi
+[ -f "$tmp/site/ai_edge_litert/$LIB" ] || { echo "error: $LIB not in ai-edge-litert wheel" >&2; exit 1; }
+cp "$tmp/site/ai_edge_litert/$LIB" "$dest/"
 ls -la "$dest"
 """
 
@@ -136,8 +114,8 @@ dir = "{{ config_root }}/packages/shapes-kotlin"
 tools = { java = "temurin-21" }
 run = "./gradlew assembleRelease"
 
-[tasks.node-natives]
-description = "Build the native server-side Node core into packages/shapes-node/native/<platform>-<arch> (run on each target OS)"
+[tasks.build-node]
+description = "Build the native server-side Node core into packages/shapes-node/native/<os>-<arch> (run on each target OS)"
 dir = "{{ config_root }}"
 shell = "bash -c"
 depends = ["litert-libs"]
@@ -437,11 +415,6 @@ fi
 description = "Cross-compile the Android native libs into packages/shapes-kotlin/src/main/jniLibs (invoked by the Gradle build)"
 dir = "{{ config_root }}"
 shell = "bash -c"
-usage = '''
-flag "--gpu" help="Ship the LiteRT GPU accelerator siblings (for GPU models; shapes runs on CPU)"
-flag "--litert-version <ver>" help="LiteRT android AAR version to vendor" default="2.1.6"
-flag "--android-api <api>" help="Android minSdk/API level to build against" default="31"
-'''
 run = """
 set -euo pipefail
 
@@ -460,7 +433,8 @@ set -euo pipefail
 # what flips core to LiteRTSession). The litert-android AAR's per-ABI
 # libLiteRt.so must be under Vendor/litert/lib/android-<arch>/. The Swift
 # Android SDK and the NDK it depends on (r27d+) install on demand below.
-API="${usage_android_api:-31}"
+API=31              # Android minSdk/API level to build against
+LITERT_VER=2.1.6    # LiteRT (litert-android AAR) version to vendor
 KOTLIN=packages/shapes-kotlin/src/main
 NDK_VER=r27d
 export SWIFT_ANDROID_STATIC_BUILD=1
@@ -511,12 +485,9 @@ fi
 
 # LiteRT android libs (linked per ABI) from the litert-android AAR on Google's
 # Maven. Each jni/<abi>/libLiteRt.so exposes the LiteRT CompiledModel C API the
-# CLiteRt shim needs. Accelerator choice is a packaging decision, not a code
-# one: core's LiteRTSession defaults to .auto (GPU when its accelerator library
-# is bundled, else CPU/XNNPACK). shapes runs on CPU, so it ships libLiteRt.so
-# only; a GPU model passes `--gpu` to also vendor the accelerator sibling(s).
-LITERT_VER="${usage_litert_version:-2.1.6}"
-LITERT_GPU="${usage_gpu:-}"   # non-empty (--gpu) ships the accelerator sibling(s)
+# CLiteRt shim needs. shapes runs on CPU (core's LiteRTSession falls back to
+# CPU/XNNPACK when no accelerator library is bundled), so it ships libLiteRt.so
+# only.
 if [ ! -f "Vendor/litert/lib/android-aarch64/libLiteRt.so" ] || [ ! -f "Vendor/litert/lib/android-x86_64/libLiteRt.so" ]; then
     echo "Fetching LiteRT $LITERT_VER android libs (one-time)..."
     tmp=$(mktemp -d)
@@ -526,11 +497,6 @@ if [ ! -f "Vendor/litert/lib/android-aarch64/libLiteRt.so" ] || [ ! -f "Vendor/l
         abi=${pair%:*}; arch=${pair#*:}
         mkdir -p "Vendor/litert/lib/android-$arch"
         cp "$tmp/jni/$abi/libLiteRt.so" "Vendor/litert/lib/android-$arch/libLiteRt.so"
-        if [ -n "$LITERT_GPU" ]; then
-            for acc in "$tmp/jni/$abi/"libLiteRt*Accelerator.so; do
-                [ -f "$acc" ] && cp "$acc" "Vendor/litert/lib/android-$arch/"
-            done
-        fi
     done
     rm -rf "$tmp"
 fi
@@ -566,10 +532,6 @@ for pair in "arm64-v8a:aarch64" "x86_64:x86_64"; do
     rm -rf "$dest" && mkdir -p "$dest"
     cp ".build/$arch-unknown-linux-android$API/release/libShapesAndroid.so" "$dest/"
     cp "Vendor/litert/lib/android-$arch/libLiteRt.so" "$dest/"
-    # GPU models (LITERT_GPU=1): also ship any vendored accelerator siblings.
-    for acc in "Vendor/litert/lib/android-$arch/"libLiteRt*Accelerator.so; do
-        [ -f "$acc" ] && cp "$acc" "$dest/"
-    done
     ndk_cxx=$(find -L "$BUNDLE/swift-android/ndk-sysroot/usr/lib" -path "*$arch*" -name libc++_shared.so 2>/dev/null | head -1 || true)
     cp "$ndk_cxx" "$dest/"
 
