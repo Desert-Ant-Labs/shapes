@@ -1,0 +1,38 @@
+name: Build Linux arm64 native
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container: swift:6.3.2-jammy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends libcurl4-openssl-dev libxml2-dev zlib1g-dev python3 python3-venv curl unzip binutils
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Vendor arm64 LiteRT
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          tmp=$(mktemp -d)
+          mkdir -p Vendor/litert/lib/linux-arm64
+          uv pip install --python-platform aarch64-manylinux_2_28 --python-version 3.12 --target "$tmp/site" --only-binary=:all: ai-edge-litert==2.1.6
+          cp "$tmp/site/ai_edge_litert/libLiteRt.so" Vendor/litert/lib/linux-arm64/
+      - name: Build ShapesNode
+        run: |
+          DAL_INFERENCE_LITERT=1 swift build -c release --product ShapesNode -Xswiftc -static-stdlib \
+            -Xlinker -LVendor/litert/lib/linux-arm64 -Xlinker -rpath -Xlinker '$ORIGIN' \
+            -Xlinker -z -Xlinker nodelete
+          mkdir -p out/linux-arm64
+          cp .build/release/libShapesNode.so Vendor/litert/lib/linux-arm64/libLiteRt.so out/linux-arm64/
+          file out/linux-arm64/libShapesNode.so
+          readelf -d out/linux-arm64/libShapesNode.so | grep -E 'NODELETE|RUNPATH|NEEDED'
+          objdump -T out/linux-arm64/libShapesNode.so | grep -oE 'GLIBC_[0-9.]+' | sort -V | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-native
+          path: out/linux-arm64/
