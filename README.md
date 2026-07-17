@@ -48,11 +48,13 @@ Add Shapes with Swift Package Manager:
 
 Then add the `Shapes` product to your app target. Live PencilKit snapping is part of the `Shapes` product.
 
-The Core ML model is bundled by default because Shapes is small. `ShapesCoreMLResources` remains available for explicit bundle construction and tests. SwiftPM consumers who prefer on-demand download or an explicit model directory can disable the default trait:
+The Core ML model is bundled by default because Shapes is small. `ShapesCoreMLResources` remains available for explicit bundle construction and tests. SwiftPM consumers who prefer on-demand download or an explicit model directory can disable the default `BundledModel` trait:
 
 ```swift
 .package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.4.3", traits: [])
 ```
+
+With the trait disabled, `Shapes()` downloads on demand and `Shapes(directory:)` loads from or downloads into your chosen directory.
 
 ### Usage
 
@@ -137,7 +139,17 @@ dependencies {
 }
 ```
 
-`ai.desertant:shapes` bundles the small LiteRT model by default, so normal installs work offline. Use an explicit directory only when you want adopt-or-download behavior.
+`ai.desertant:shapes` bundles the small LiteRT model by default, so normal installs work offline. To disable bundling, exclude the transitive resources artifact:
+
+```kotlin
+dependencies {
+    implementation("ai.desertant:shapes:0.4.3") {
+        exclude(group = "ai.desertant", module = "shapes-tflite-resources")
+    }
+}
+```
+
+With that exclusion, `Shapes(context)` downloads on demand and caches the model. `Shapes(context, directory = modelDir)` loads from or downloads into your chosen directory.
 
 ### Usage
 
