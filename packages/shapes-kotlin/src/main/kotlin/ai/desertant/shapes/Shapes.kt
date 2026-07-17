@@ -24,33 +24,39 @@ class ShapesException(message: String) : Exception(message)
  * (or eagerly via [download]).
  *
  * ```kotlin
- * val shapes = Shapes(context)                       // download on demand, cached
+ * val shapes = Shapes(context)                       // bundled by default
  * val shape = shapes.recognize(strokePoints)         // Shape? (null if rejected)
  * shapes.close()
  * ```
  */
 class Shapes private constructor(private val handle: Long) : AutoCloseable {
     /**
-     * A recognizer that downloads the model on demand (cached under the app's
-     * cacheDir), or, when [directory] is given, treats that directory as the
-     * model's home (adopt files there, else download into it). Construction is
-     * cheap; the model loads on the first [recognize] (or eagerly via [download]).
+     * A recognizer using the bundled model by default. When [directory] is
+     * supplied, that directory is treated as the model's home instead (adopt
+     * files there, else download into it). Construction is cheap; the model
+     * loads on the first [recognize] (or eagerly via [download]).
      */
     constructor(context: android.content.Context, directory: String? = null)
-        : this(createHandle(context.cacheDir.absolutePath, directory))
+        : this(if (directory == null) bundledHandleOrNull() ?: createHandle(context.cacheDir.absolutePath, null) else createHandle(context.cacheDir.absolutePath, directory))
 
     companion object {
         /**
-         * A recognizer using the model bundled in your app via the
-         * `ai.desertant:shapes-tflite-resources` dependency (no network).
+         * A recognizer using the bundled model (no network). The main Shapes AAR
+         * depends on the resources artifact by default because the model is
+         * small; this remains useful for explicit offline construction.
          */
         fun bundled(): Shapes {
-            ShapesNative.ensureLoaded()
-            val handle = ShapesNative.createBundled(
-                resource("shapes_meta.json"), resource("shapes.tflite"))
-            if (handle == 0L) throw ShapesException(
-                "bundled model unavailable; add the `ai.desertant:shapes-tflite-resources` dependency")
+            val handle = bundledHandleOrNull() ?: throw ShapesException(
+                "bundled model unavailable; make sure `ai.desertant:shapes-tflite-resources` is present")
             return Shapes(handle)
+        }
+
+        private fun bundledHandleOrNull(): Long? {
+            ShapesNative.ensureLoaded()
+            val meta = resourceOrNull("shapes_meta.json") ?: return null
+            val model = resourceOrNull("shapes.tflite") ?: return null
+            val handle = ShapesNative.createBundled(meta, model)
+            return handle.takeIf { it != 0L }
         }
 
         private fun createHandle(cacheRoot: String, directory: String?): Long {
@@ -61,12 +67,8 @@ class Shapes private constructor(private val handle: Long) : AutoCloseable {
             return handle
         }
 
-        private fun resource(name: String): ByteArray =
-            (Shapes::class.java.getResourceAsStream("/$name")
-                ?: throw ShapesException(
-                    "bundled model resource not found: $name. Add the " +
-                        "`ai.desertant:shapes-tflite-resources` dependency, or use Shapes(context)."))
-                .use { it.readBytes() }
+        private fun resourceOrNull(name: String): ByteArray? =
+            Shapes::class.java.getResourceAsStream("/$name")?.use { it.readBytes() }
     }
 
     /** Whether the model is available for this recognizer with no network. */

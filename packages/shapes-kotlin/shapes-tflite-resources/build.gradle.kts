@@ -1,23 +1,19 @@
 import com.vanniktech.maven.publish.JavaLibrary
 import com.vanniktech.maven.publish.JavadocJar
 
-// Optional bundled model for Shapes on Android (the Android counterpart of the
+// Bundled model files for Shapes on Android (the Android counterpart of the
 // SwiftPM `ShapesTFLiteResources` product). The model files (shapes.tflite,
 // shapes_meta.json) are staged into src/main/resources by
-// `mise run android-natives`; this module packages them as classpath
-// resources. An app bundles the model by depending on this artifact:
-//
-//     implementation("ai.desertant:shapes")                   // the SDK (no model)
-//     implementation("ai.desertant:shapes-tflite-resources")  // opt-in: bundle the model
-//
-// Without it, `Shapes(context)` downloads the model on demand instead.
+// `mise run android-natives`; this module packages them as classpath resources.
+// The main `ai.desertant:shapes` artifact depends on this module by default
+// because Shapes is small enough to bundle automatically.
 plugins {
     `java-library`
     id("com.vanniktech.maven.publish") version "0.34.0"
 }
 
 group = "ai.desertant"
-version = "0.4.2"
+version = "0.4.3"
 
 // The model files are staged (gitignored) by the root project's Swift build
 // task; depend on it so a fresh checkout cannot produce or publish an empty
@@ -52,7 +48,7 @@ mavenPublishing {
     configure(JavaLibrary(javadocJar = JavadocJar.Empty(), sourcesJar = true))
     pom {
         name.set("Shapes LiteRT resources")
-        description.set("Opt-in bundled on-device Shapes model files for Android (no network at runtime).")
+        description.set("Bundled on-device Shapes model files for Android (no network at runtime).")
         url.set("https://github.com/Desert-Ant-Labs/shapes")
         licenses {
             license {

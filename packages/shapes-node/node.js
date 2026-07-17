@@ -44,6 +44,7 @@ function loadLib() {
   const core = koffi.load(path.join(dir, CORE[process.platform] || CORE.linux));
   lib = {
     create: core.func("void* shapes_create(const char*, const char*)"),
+    createBundled: core.func("void* shapes_create_bundled(const char*, uint8_t*, int)"),
     isDownloaded: core.func("int shapes_is_downloaded(void*)"),
     download: core.func("int shapes_download(void*)"),
     run: core.func("void* shapes_run(void*, uint8_t*, int, double)"),
@@ -89,7 +90,7 @@ function decodeShape(ptr) {
  * iOS/Swift SDK.
  *
  * ```js
- * const shapes = await Shapes.load();           // downloads the model on demand, cached
+ * const shapes = await Shapes.load();           // bundled model, ready offline
  * const shape = await shapes.recognize(points); // Shape | null
  * shapes.dispose();                             // free the native handle when done
  * ```
@@ -105,22 +106,29 @@ export class Shapes {
    */
   static async load(options = {}) {
     const l = loadLib();
-    // Managed nested cache under ~/.cache by default (matches the browser host);
-    // an explicit `directory` is adopted if it holds the files, else downloaded.
-    const cacheRoot = options.cacheRoot ?? path.join(os.homedir(), ".cache");
-    const directory = options.directory ?? null;
-    const handle = l.create(cacheRoot, directory);
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : undefined;
+    let handle;
+    if (options.directory == null) {
+      // Shapes is small, so the npm package includes the LiteRT model by
+      // default. No network or cache setup is needed for normal server use.
+      const modelDir = path.join(HERE, "model");
+      const meta = fs.readFileSync(path.join(modelDir, "shapes_meta.json"), "utf8");
+      const model = new Uint8Array(fs.readFileSync(path.join(modelDir, "shapes.tflite")));
+      handle = l.createBundled(meta, model, model.byteLength);
+      onProgress?.(1);
+    } else {
+      // An explicit directory opts into adopt-or-download behavior.
+      const cacheRoot = options.cacheRoot ?? path.join(os.homedir(), ".cache");
+      handle = l.create(cacheRoot, options.directory);
+    }
     if (!handle) throw new Error("@desert-ant-labs/shapes: failed to create recognizer");
     const shapes = new Shapes(handle);
-    // Ready the model now so the first recognize is instant and load() surfaces
-    // any download error, matching the browser's eager `load()`.
-    const onProgress = typeof options.onProgress === "function" ? options.onProgress : undefined;
-    if (l.isDownloaded(handle) === 0) {
+    if (options.directory != null && l.isDownloaded(handle) === 0) {
       onProgress?.(0);
       const rc = await callAsync(l.download, handle);
       if (rc !== 0) { shapes.dispose(); throw new Error("@desert-ant-labs/shapes: model download failed"); }
+      onProgress?.(1);
     }
-    onProgress?.(1);
     return shapes;
   }
 

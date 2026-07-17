@@ -1,4 +1,5 @@
 #if os(WASI)
+import Inference
 import JavaScriptEventLoop
 import JavaScriptKit
 @_spi(ShapesBindings) import Shapes
@@ -10,6 +11,7 @@ import JavaScriptKit
 //
 //     globalThis.__ShapesExports = {
 //       load(cacheRoot, directory?, onProgress?)   -> Promise<boolean>,
+//       loadBundled(metaJSON, modelBytes)          -> Promise<boolean>,
 //       recognize(points, minimumConfidence?)      -> Promise<Shape | null>,
 //     }
 //
@@ -122,8 +124,43 @@ let loadFn = JSClosure { args in
     }.jsValue
 }
 
+let loadBundledFn = JSClosure { args in
+    let metaJSON = args.first?.string
+    let byteArray = args.count > 1 ? args[1].object : nil
+    return JSPromise { resolve in
+        Task {
+            do {
+                guard let metaJSON, let byteArray, let n = byteArray.length.number else {
+                    throw ShapesError.resourceMissing
+                }
+                var bytes: [UInt8] = []
+                bytes.reserveCapacity(Int(n))
+                for i in 0..<Int(n) {
+                    bytes.append(UInt8(clamping: Int(byteArray[i].number ?? 0)))
+                }
+                guard let host = JSObject.global.__ShapesHost.object,
+                      let createSession = host.createSession.object else {
+                    throw ShapesError.resourceMissing
+                }
+                guard let promise = createSession(JSTypedArray<UInt8>(bytes).jsValue).object.flatMap(JSPromise.init) else {
+                    throw ShapesError.predictionFailed
+                }
+                _ = try await promise.value
+                let assets = try ModelAssets(metaJSON: metaJSON, session: JSInferenceSession(hostGlobal: "__ShapesHost"))
+                let shapes = Shapes(assets: assets)
+                try await shapes.waitUntilLoaded()
+                recognizer = shapes
+                resolve(.success(.boolean(true)))
+            } catch {
+                resolve(.failure(.string(String(describing: error))))
+            }
+        }
+    }.jsValue
+}
+
 let exports = JSObject.global.Object.function!.new()
 exports.load = .object(loadFn)
+exports.loadBundled = .object(loadBundledFn)
 exports.recognize = .object(recognizeFn)
 JSObject.global.__ShapesExports = .object(exports)
 #endif

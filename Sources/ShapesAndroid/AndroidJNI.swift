@@ -9,8 +9,8 @@ import HostBridge
 // CABI.swift. The API mirrors the Swift SDK: an instance (opaque handle) per
 // Shapes, with lazy loading, isDownloaded, download, and run.
 //
-// The model is either bundled (createBundled, bytes from the optional
-// shapes-tflite-resources) or loaded on demand (create, download/local dir).
+// The model is either bundled (createBundled, bytes from shapes-tflite-resources)
+// or loaded on demand (create, download/local dir).
 // Points cross as a little-endian f64 byte array; the recognized shape comes
 // back as the FFIBuffer length-prefixed typed buffer. Handles cross as jlong.
 

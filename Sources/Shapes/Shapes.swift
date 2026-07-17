@@ -74,8 +74,8 @@ public final class Shapes: @unchecked Sendable {
     @_spi(ShapesBindings)
     public convenience init(directory: String?, cacheRoot: String?) {
         self.init(
-            resolve: { try await Shapes.resolvedAssets(directory: directory, cacheRoot: cacheRoot, progress: $0) },
-            isAvailable: { Shapes.isModelAvailable(directory: directory, cacheRoot: cacheRoot) }
+            resolve: { try await Shapes.defaultAssets(directory: directory, cacheRoot: cacheRoot, progress: $0) },
+            isAvailable: { Shapes.defaultIsAvailable(directory: directory, cacheRoot: cacheRoot) }
         )
     }
 
@@ -92,7 +92,8 @@ public final class Shapes: @unchecked Sendable {
     }
 
     /// Whether the model is available for this recognizer with no network:
-    /// cached (for the download source), present (for a directory), or bundled.
+    /// bundled by default, cached (for the download source), or present in a
+    /// directory.
     public func isDownloaded() -> Bool { availability() }
 
     /// Download and load the model ahead of time, so the first

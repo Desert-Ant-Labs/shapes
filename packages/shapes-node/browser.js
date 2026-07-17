@@ -90,7 +90,7 @@ async function ensureLiteRt(options, lrt) {
  * `await Shapes.load(...)` and reuse it, mirroring the iOS/Swift SDK.
  *
  * ```js
- * const shapes = await Shapes.load();          // downloads the model on demand, cached
+ * const shapes = await Shapes.load();          // bundled model, ready offline
  * const shape = await shapes.recognize(points); // Shape | null
  * ```
  */
@@ -161,16 +161,24 @@ export class Shapes {
       },
     };
 
-    // Base for the managed nested cache (node): ~/.cache. In the browser there
-    // is no persistent filesystem, so it stays empty (in-memory).
-    let cacheRoot = "";
-    if (IS_NODE) {
-      const os = await import("node:os");
-      const path = await import("node:path");
-      cacheRoot = path.join(os.homedir(), ".cache");
-    }
     const onProgress = typeof resolved.onProgress === "function" ? resolved.onProgress : undefined;
-    await core.load(cacheRoot, resolved.directory ?? "", onProgress);
+    if (resolved.directory == null) {
+      // Shapes is small, so the npm package includes the LiteRT model by
+      // default. Browser bundlers understand new URL(..., import.meta.url) as a
+      // package asset, and direct node_modules serving works too.
+      const { metaJSON, modelBytes } = await loadPackagedModel();
+      await core.loadBundled(metaJSON, modelBytes);
+      onProgress?.(1);
+    } else {
+      // Explicit directory keeps the old adopt-or-download behavior.
+      let cacheRoot = "";
+      if (IS_NODE) {
+        const os = await import("node:os");
+        const path = await import("node:path");
+        cacheRoot = path.join(os.homedir(), ".cache");
+      }
+      await core.load(cacheRoot, resolved.directory, onProgress);
+    }
     return new Shapes();
   }
 
@@ -183,6 +191,24 @@ export class Shapes {
     const flat = flatten(points);
     return core.recognize(flat, options.minimumConfidence ?? 0);
   }
+}
+
+async function loadPackagedModel() {
+  if (IS_NODE) {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    return {
+      metaJSON: fs.readFileSync(path.join(here, "model", "shapes_meta.json"), "utf8"),
+      modelBytes: new Uint8Array(fs.readFileSync(path.join(here, "model", "shapes.tflite"))),
+    };
+  }
+  const [meta, model] = await Promise.all([
+    fetch(new URL("./model/shapes_meta.json", import.meta.url)).then((r) => r.text()),
+    fetch(new URL("./model/shapes.tflite", import.meta.url)).then((r) => r.arrayBuffer()),
+  ]);
+  return { metaJSON: meta, modelBytes: new Uint8Array(model) };
 }
 
 function flatten(points) {

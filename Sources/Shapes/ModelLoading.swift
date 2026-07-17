@@ -5,6 +5,12 @@
 // desert-ant-core's `inferenceSession` factory.
 import Inference
 import ModelStore
+#if canImport(ShapesCoreMLResources)
+import ShapesCoreMLResources
+#endif
+#if canImport(ShapesTFLiteResources)
+import ShapesTFLiteResources
+#endif
 
 /// The model's file names and per-platform artifacts, in one place.
 enum ShapesModel {
@@ -38,7 +44,8 @@ public struct ModelAssets: Sendable {
             session: try inferenceSession(modelBytes: modelBytes))
     }
 
-    init(metaJSON: String, session: any InferenceSession) {
+    @_spi(ShapesBindings)
+    public init(metaJSON: String, session: any InferenceSession) {
         self.metaJSON = metaJSON
         self.session = session
     }
@@ -58,6 +65,27 @@ public extension Shapes {
     /// The model revision this SDK is built against (pinned; not configurable).
     static var modelRevision: String { "v0.3.0" }
 
+    /// Resolve the model for the default recognizer. Shapes is small, so the
+    /// default uses bundled model resources when no explicit directory is
+    /// supplied. Passing a directory keeps the adoption/download behavior.
+    internal static func defaultAssets(
+        directory: String?,
+        cacheRoot: String? = nil,
+        progress: @Sendable @escaping (Double) -> Void
+    ) async throws -> ModelAssets {
+        if directory == nil, let assets = try bundledDefaultAssets() {
+            progress(1)
+            return assets
+        }
+        return try await resolvedAssets(directory: directory, cacheRoot: cacheRoot, progress: progress)
+    }
+
+    /// Whether the default recognizer is available offline.
+    internal static func defaultIsAvailable(directory: String?, cacheRoot: String? = nil) -> Bool {
+        if directory == nil, hasBundledDefaultAssets() { return true }
+        return isModelAvailable(directory: directory, cacheRoot: cacheRoot)
+    }
+
     /// Resolve the model for `directory` (adopt your files, or download there),
     /// then build loadable assets. `nil` uses the managed cache.
     internal static func resolvedAssets(
@@ -72,6 +100,22 @@ public extension Shapes {
     /// Whether the model is available offline for `directory`.
     internal static func isModelAvailable(directory: String?, cacheRoot: String? = nil) -> Bool {
         distribution().isAvailable(cacheDirectory: directory, cacheRoot: cacheRoot)
+    }
+
+    private static func bundledDefaultAssets() throws -> ModelAssets? {
+#if canImport(CoreML) || os(Linux)
+        try ModelAssets.defaultBundle()
+#else
+        nil
+#endif
+    }
+
+    private static func hasBundledDefaultAssets() -> Bool {
+#if canImport(ShapesCoreMLResources) || canImport(ShapesTFLiteResources)
+        true
+#else
+        false
+#endif
     }
 
     private static func distribution() -> ModelDistribution {
@@ -90,24 +134,19 @@ public extension Shapes {
     }
 }
 
-// MARK: opt-in app bundling (Apple / Linux)
+// MARK: app bundling (Apple / Linux)
 
-// Add a model resources product (ShapesCoreMLResources on Apple,
-// ShapesTFLiteResources on Linux) and pass its bundle. On Android, bundling is the
-// optional `:shapes-tflite-resources` artifact; wasm always downloads. This is the
-// one platform conditional in the model code: `Bundle` is a Foundation type, so
-// the initializer only exists where SwiftPM resource bundles do.
+// Shapes is small enough to bundle by default. The explicit bundle initializer
+// remains useful for tests and custom package layouts. On Android, the normal
+// AAR depends on the resources artifact by default. In JavaScript, the npm
+// package ships the LiteRT model files next to browser.js and node.js.
 #if canImport(CoreML) || os(Linux)
 import Foundation
 import ModelResources
 
 public extension Shapes {
-    /// Load a model bundled into your app:
-    ///
-    /// ```swift
-    /// import ShapesCoreMLResources
-    /// let shapes = Shapes(bundle: ShapesCoreMLResourcesBundle.bundle)
-    /// ```
+    /// Load a model from an explicit resource bundle. `Shapes()` already uses
+    /// the packaged bundle by default for this small model.
     convenience init(bundle: Bundle) {
         self.init(
             resolve: { _ in try ModelAssets.shapes(bundle: bundle) },
@@ -117,6 +156,18 @@ public extension Shapes {
 }
 
 extension ModelAssets {
+    /// Build from the package's default bundled resource target, when this
+    /// platform has one linked.
+    static func defaultBundle() throws -> ModelAssets? {
+#if canImport(ShapesCoreMLResources)
+        return try shapes(bundle: ShapesCoreMLResourcesBundle.bundle)
+#elseif canImport(ShapesTFLiteResources)
+        return try shapes(bundle: ShapesTFLiteResourcesBundle.bundle)
+#else
+        return nil
+#endif
+    }
+
     /// Build from a resource bundle: the sidecar plus this platform's session
     /// for the bundled artifact.
     static func shapes(bundle: Bundle) throws -> ModelAssets {

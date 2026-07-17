@@ -31,7 +31,7 @@ A small classifier proposes a shape, a geometric fitter produces the clean param
 - Recognizes `line`, `rectangle`, `triangle`, `ellipse`, and `star`, and rejects scribbles.
 - Fits clean vector geometry and snaps it to axes, circles, squares, and 15° rotations.
 - One and the same recognition pipeline on every platform, so results match: Core ML on Apple, LiteRT on Android and Linux, LiteRT.js in the browser.
-- Small model, downloaded on demand and cached by default, or bundled for offline apps (about 0.2 MB on Apple, ~1.3 MB LiteRT); recognition is typically a few milliseconds.
+- Small model bundled by default (about 0.2 MB on Apple, ~1.3 MB LiteRT), with explicit-directory download/adopt still available; recognition is typically a few milliseconds.
 - Apple bonus: one-line live snapping on a PencilKit canvas with an undo-safe preview.
 
 ## Swift
@@ -43,12 +43,12 @@ Requirements: iOS 16+, macOS 13+, tvOS 16+, watchOS 9+, visionOS 1+, and Swift 5
 Add Shapes with Swift Package Manager:
 
 ```swift
-.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.4.2")
+.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.4.3")
 ```
 
 Then add the `Shapes` product to your app target. Live PencilKit snapping is part of the `Shapes` product.
 
-To bundle the Core ML model for fully offline Apple apps, also add `ShapesCoreMLResources` to your target.
+The Core ML model is bundled by default because Shapes is small. `ShapesCoreMLResources` remains available for explicit bundle construction and tests.
 
 ### Usage
 
@@ -72,7 +72,7 @@ if let shape = try await shapes.recognize(points: strokePoints) {
 Choose where the model comes from:
 
 ```swift
-let shapes = Shapes()                       // managed cache, download on demand
+let shapes = Shapes()                       // bundled model by default
 let shapes = Shapes(directory: myModelDir)  // explicit model directory
 let shapes = Shapes(bundle: myBundle)       // bundled model resources
 ```
@@ -129,18 +129,11 @@ dependencyResolutionManagement {
 
 // build.gradle.kts
 dependencies {
-    implementation("ai.desertant:shapes:0.4.2")
+    implementation("ai.desertant:shapes:0.4.3")
 }
 ```
 
-`ai.desertant:shapes` downloads the model on demand and caches it under the app cache directory. To ship the LiteRT model inside your APK or app bundle instead, add the resources artifact and use `Shapes.bundled()`:
-
-```kotlin
-dependencies {
-    implementation("ai.desertant:shapes:0.4.2")
-    implementation("ai.desertant:shapes-tflite-resources:0.4.2")
-}
-```
+`ai.desertant:shapes` bundles the small LiteRT model by default, so normal installs work offline. Use an explicit directory only when you want adopt-or-download behavior.
 
 ### Usage
 
@@ -148,7 +141,7 @@ dependencies {
 import ai.desertant.shapes.Point
 import ai.desertant.shapes.Shapes
 
-val shapes = Shapes(context)                 // download on demand, cached
+val shapes = Shapes(context)                 // bundled model by default
 val shape = shapes.recognize(strokePoints)   // Shape? (null if rejected)
 when (shape) {
     is Shapes.Rectangle -> shape.corners
@@ -180,7 +173,7 @@ Use an explicit model directory or bundled resources:
 ```kotlin
 val cached = Shapes(context)                         // managed cache
 val explicit = Shapes(context, directory = modelDir) // explicit model directory
-val offline = Shapes.bundled()                       // needs shapes-tflite-resources
+val offline = Shapes.bundled()                       // explicit bundled constructor
 ```
 
 ### Example
@@ -208,7 +201,7 @@ Server-side native builds ship for linux-x64, linux-arm64 (LiteRT), and darwin-a
 ```ts
 import { Shapes } from "@desert-ant-labs/shapes";
 
-const shapes = await Shapes.load();               // download on demand, cached
+const shapes = await Shapes.load();               // bundled model by default
 const shape = await shapes.recognize(points);     // [{x, y}, ...] or [x0, y0, ...]
 if (shape?.kind === "ellipse") shape.center;
 ```
@@ -253,9 +246,9 @@ The model artifacts are published at [`desert-ant-labs/shapes`](https://huggingf
 
 Default behavior:
 
-- Swift: downloads the Core ML model on demand to a managed cache, or uses bundled `ShapesCoreMLResources`.
-- Android: downloads the LiteRT model on demand to app cache, or uses bundled `ai.desertant:shapes-tflite-resources`.
-- JavaScript: downloads the LiteRT model on `Shapes.load()` to the managed cache in Node (`~/.cache/desert-ant-models/...`) or browser cache storage when available.
+- Swift: bundles the Core ML model by default, with explicit-directory download/adopt still available.
+- Android: bundles the LiteRT model by default through the normal `ai.desertant:shapes` dependency.
+- JavaScript: bundles the LiteRT model in the npm package by default.
 
 Passing an explicit `directory` makes that directory the model home. Existing valid files are adopted for offline use; otherwise Shapes downloads into that directory and reuses it later.
 

@@ -22,7 +22,7 @@ npm i @desert-ant-labs/shapes
 ```js
 import { Shapes } from "@desert-ant-labs/shapes";
 
-const shapes = await Shapes.load();            // downloads the model on demand, cached
+const shapes = await Shapes.load();            // bundled model by default
 const shape = await shapes.recognize(points);  // points: [{x, y}, ...] or [x0, y0, ...]
 
 if (shape?.kind === "rectangle") {
@@ -33,11 +33,11 @@ shapes.dispose();  // (Node) free the native handle when done; no-op in the brow
 
 `Shapes.load()` accepts:
 
-- `directory` (Node): an explicit model directory; files already there are used
-  offline, otherwise the model is downloaded into it. Omit for the managed
-  cache (`~/.cache/desert-ant-models/...`).
+- `directory` (Node): opt into an explicit model directory; files already there
+  are used offline, otherwise the model is downloaded into it. Omit to use the
+  model bundled in the npm package.
 - `cacheRoot` (Node): base directory for the managed cache (default `~/.cache`).
-- `onProgress`: download progress callback, fraction in `[0, 1]`.
+- `onProgress`: load/download progress callback, fraction in `[0, 1]`.
 - Browser-only: `litert` (bring-your-own `@litertjs/core`), `litertWasmDir`
   (URL/path to the LiteRT.js Wasm directory; defaults to the installed package,
   or the jsDelivr CDN), and `accelerator` (`"wasm"` XNNPACK CPU default,

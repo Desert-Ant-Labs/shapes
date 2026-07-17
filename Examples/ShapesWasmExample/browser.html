@@ -6,7 +6,7 @@
   {
     "imports": {
       "@bjorn3/browser_wasi_shim": "/node_modules/@bjorn3/browser_wasi_shim/dist/index.js",
-      "@desert-ant-labs/shapes": "/node_modules/@desert-ant-labs/shapes/index.js",
+      "@desert-ant-labs/shapes": "/node_modules/@desert-ant-labs/shapes/browser.js",
       "@litertjs/core": "/node_modules/@litertjs/core/dist/index.js",
       "@litertjs/wasm-utils": "/node_modules/@litertjs/wasm-utils/dist/index.js"
     }
@@ -32,8 +32,8 @@
 
   async function run() {
     const { Shapes } = await import("@desert-ant-labs/shapes");
-    // Shapes downloads, verifies, and caches the model from the Hub; LiteRT.js
-    // runs inference on the .tflite (XNNPACK CPU via the "wasm" accelerator).
+    // Shapes uses the bundled model by default; LiteRT.js runs inference on the
+    // .tflite (XNNPACK CPU via the "wasm" accelerator).
     const shapes = await Shapes.load({
       litert,
       litertWasmDir: "/node_modules/@litertjs/core/wasm/",

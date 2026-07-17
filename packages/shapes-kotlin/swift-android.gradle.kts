@@ -1,8 +1,8 @@
 // Gradle drives the native build through mise. `mise run android-natives` (defined
 // in the repo-root mise.toml) builds libShapesAndroid.so per ABI, copies it +
 // libc++_shared.so + libLiteRt.so into src/main/jniLibs, and stages the
-// model into the optional :shapes-tflite-resources module's resources. This task
-// runs before the Android merge/package steps.
+// model into the :shapes-tflite-resources module's resources. This task runs
+// before the Android merge/package steps.
 //
 // Requires `mise` on PATH and the config trusted; MISE_TRUSTED_CONFIG_PATHS makes
 // the run non-interactive on CI/fresh checkouts.

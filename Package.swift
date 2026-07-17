@@ -48,8 +48,9 @@ let package = Package(
     ],
     products: [
         .library(name: "Shapes", targets: ["Shapes"]),
-        // Opt-in app bundling: add one of these and pass its bundle to
-        // `Shapes(bundle:)` to ship the model in your app instead of downloading.
+        // Shapes is small, so the main SDK bundles the model by default. These
+        // resource products remain public for apps that want explicit bundle
+        // construction or tests.
         .library(name: "ShapesCoreMLResources", targets: ["ShapesCoreMLResources"]),
         .library(name: "ShapesTFLiteResources", targets: ["ShapesTFLiteResources"]),
         // Android JNI library (built by `mise run android-natives`).
@@ -82,11 +83,13 @@ let package = Package(
                 .product(name: "PlatformSupport", package: "desert-ant-core"),
                 .product(name: "ModelResources", package: "desert-ant-core"),
                 .product(name: "RealModule", package: "swift-numerics"),
-                // Named-tensor inference sessions (Core ML | LiteRT | JS
-                // host). The model is downloaded on demand by default; the
-                // resource targets below are opt-in and passed via
-                // `Shapes(bundle:)`, so the core library does not ship the model.
+                // Named-tensor inference sessions (Core ML | LiteRT | JS host).
                 .product(name: "Inference", package: "desert-ant-core"),
+                // Shapes is below the small-model threshold, so bundle the
+                // runnable artifact by default on SwiftPM platforms that support
+                // resource bundles. Apple gets Core ML; Linux gets LiteRT.
+                .target(name: "ShapesCoreMLResources", condition: .when(platforms: appleResourcePlatforms)),
+                .target(name: "ShapesTFLiteResources", condition: .when(platforms: [.linux, .windows])),
             ]
             // Apple-only live PencilKit canvas snapping lives here too
             // (ShapeSnapping.swift / PencilKitInterop.swift, gated by
