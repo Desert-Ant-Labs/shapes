@@ -13,6 +13,7 @@ import fs from "node:fs";
 const require = createRequire(import.meta.url);
 const koffi = require("koffi");
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_VERSION = JSON.parse(fs.readFileSync(path.join(HERE, "package.json"), "utf8")).version;
 
 // The prebuilt native for this host lives in native/<platform>-<arch>/ next to
 // this file (built by `mise run build-node`): the self-contained Swift core
@@ -26,6 +27,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // the Hugging Face Hub at the SDK's pinned tag, verifies them (SHA-256), and
 // caches them under the OS cache dir, then loads the artifact by path. An
 // explicit `directory` adopts a self-hosted folder instead of downloading.
+// The native library is built from the Swift package, where the default
+// `Shapes()` prefers SwiftPM resource bundles. npm does not ship those SwiftPM
+// bundles, so the Node entry always supplies a real model directory: either the
+// caller's `directory`, or a versioned folder under `cacheRoot`.
 function nativeDir() {
   const key = `${process.platform}-${process.arch}`;
   const dir = path.join(HERE, "native", key);
@@ -36,6 +41,10 @@ function nativeDir() {
         `Use the Swift package or a browser on this platform.`);
   }
   return dir;
+}
+
+function defaultModelDirectory(cacheRoot) {
+  return path.join(cacheRoot, "@desert-ant-labs", "shapes", PACKAGE_VERSION, `${process.platform}-${process.arch}`);
 }
 
 const RUNTIME = { linux: "libLiteRt.so", darwin: "libLiteRt.dylib", win32: "LiteRt.dll" };
@@ -117,9 +126,10 @@ export class Shapes {
     const l = loadLib();
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : undefined;
     const cacheRoot = options.cacheRoot ?? path.join(os.homedir(), ".cache");
-    // directory == null -> download this platform's files from HF at the pinned
-    // tag into the managed cache; a directory adopts a self-hosted folder.
-    const handle = l.create(cacheRoot, options.directory ?? null);
+    // Always pass a concrete directory. Passing null would let the Swift core
+    // try SwiftPM resource bundles, which are not part of the npm package.
+    const directory = options.directory ?? defaultModelDirectory(cacheRoot);
+    const handle = l.create(cacheRoot, directory);
     if (!handle) throw new Error("@desert-ant-labs/shapes: failed to create recognizer");
     const shapes = new Shapes(handle);
     if (l.isDownloaded(handle) === 0) {
