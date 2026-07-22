@@ -43,7 +43,7 @@ Requirements: iOS 16+, macOS 13+, tvOS 16+, watchOS 9+, visionOS 1+, and Swift 5
 Add Shapes with Swift Package Manager:
 
 ```swift
-.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.5.0")
+.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.6.0")
 ```
 
 Then add the `Shapes` product to your app target. Live PencilKit snapping is part of the `Shapes` product.
@@ -51,7 +51,7 @@ Then add the `Shapes` product to your app target. Live PencilKit snapping is par
 The Core ML model is bundled by default because Shapes is small. `ShapesCoreMLResources` remains available for explicit bundle construction and tests. SwiftPM consumers who prefer on-demand download or an explicit model directory can disable the default `BundledModel` trait:
 
 ```swift
-.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.5.0", traits: [])
+.package(url: "https://github.com/Desert-Ant-Labs/shapes.git", from: "0.6.0", traits: [])
 ```
 
 With the trait disabled, `Shapes()` downloads on demand and `Shapes(directory:)` loads from or downloads into your chosen directory.
@@ -217,16 +217,21 @@ Server-side native builds ship for linux-x64, linux-arm64 (LiteRT), and darwin-a
 ```ts
 import { Shapes } from "@desert-ant-labs/shapes";
 
-const shapes = await Shapes.load();               // bundled model by default
+const shapes = await Shapes.load();               // downloads + caches on first use
 const shape = await shapes.recognize(points);     // [{x, y}, ...] or [x0, y0, ...]
 if (shape?.kind === "ellipse") shape.center;
 ```
 
-Control loading:
+Unlike the Swift and Android packages, the JavaScript package does not bundle the
+model: `Shapes.load()` downloads it from the Hugging Face Hub at the SDK's pinned
+tag on first use and caches it (the OS cache dir in Node, the fetch cache in the
+browser). To self-host or run offline, pass `directory` (Node) or `modelBaseUrl`
+(browser):
 
 ```js
 const shapes = await Shapes.load({
-  directory: "/var/cache/shapes",       // Node only, optional
+  directory: "/var/cache/shapes",       // Node: adopt/download files here
+  modelBaseUrl: "/assets/shapes/",      // Browser: serve the files yourself
   onProgress: (fraction) => console.log(fraction),
 });
 ```

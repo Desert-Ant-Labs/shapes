@@ -44,6 +44,8 @@ async function loadLiteRtModule(options) {
   try {
     return await import("@litertjs/core");
   } catch (cause) {
+    // Only surface the install hint when @litertjs/core is genuinely absent;
+    // rethrow anything else (a real error from inside LiteRT.js) unchanged.
     const missingLiteRt =
       cause?.code === "ERR_MODULE_NOT_FOUND" ||
       cause?.code === "MODULE_NOT_FOUND" ||
@@ -52,7 +54,8 @@ async function loadLiteRtModule(options) {
     throw new Error(
       "@desert-ant-labs/shapes browser runtime requires @litertjs/core. " +
         "Install it with: npm i @desert-ant-labs/shapes @litertjs/core. " +
-        "If you already bundle LiteRT.js yourself, pass it to Shapes.load({ litert }).",
+        "If you already bundle LiteRT.js yourself, pass it to Shapes.load({ litert }). " +
+        "(In Node, import the package normally to use the native server-side build instead.)",
       { cause },
     );
   }
@@ -90,16 +93,18 @@ async function ensureLiteRt(options, lrt) {
  * `await Shapes.load(...)` and reuse it, mirroring the iOS/Swift SDK.
  *
  * ```js
- * const shapes = await Shapes.load();          // bundled model, ready offline
+ * const shapes = await Shapes.load();          // downloads + caches on first use
  * const shape = await shapes.recognize(points); // Shape | null
  * ```
  */
 export class Shapes {
   /**
-   * Load the model and return a ready recognizer. Download, SHA-256
-   * verification, and caching are handled by the runtime; this host owns the
-   * LiteRT.js session behind the generic tensor contract (createSession + run).
-   * The repo and revision are pinned to the SDK.
+   * Load the model and return a ready recognizer. By default the runtime
+   * downloads the model from the Hugging Face Hub at the SDK's pinned tag
+   * (fetched + cached by the browser) and this host owns the LiteRT.js session
+   * behind the generic tensor contract (createSession + run). Pass
+   * `modelBaseUrl` (a base URL you serve the files from) to self-host / run
+   * without the Hub. The repo and revision are pinned to the SDK.
    */
   static async load(options = {}) {
     const resolved = options;
@@ -162,23 +167,27 @@ export class Shapes {
     };
 
     const onProgress = typeof resolved.onProgress === "function" ? resolved.onProgress : undefined;
-    if (resolved.directory == null) {
-      // Shapes is small, so the npm package includes the LiteRT model by
-      // default. Browser bundlers understand new URL(..., import.meta.url) as a
-      // package asset, and direct node_modules serving works too.
-      const { metaJSON, modelBytes } = await loadPackagedModel();
+    if (resolved.modelBaseUrl != null) {
+      // Self-hosted files (offline / no runtime CDN): fetch the model + meta
+      // from the given base URL and compile directly, no Hub download. This is
+      // the browser opt-out, e.g. a demo that serves the model from its origin.
+      const { metaJSON, modelBytes } = await fetchModelFrom(resolved.modelBaseUrl);
       model = await loadAndCompile(modelBytes, { accelerator });
       await core.loadBundled(metaJSON);
       onProgress?.(1);
     } else {
-      // Explicit directory keeps the old adopt-or-download behavior.
+      // Default: the runtime downloads this platform's files from the HF Hub at
+      // the pinned tag (SHA-256 verified), fetched + cached by the JS host, and
+      // wires the session through createSession above. `directory` (node) adopts
+      // a self-hosted folder. Base for the managed nested cache (node): ~/.cache;
+      // empty (in-memory) in the browser.
       let cacheRoot = "";
       if (IS_NODE) {
         const os = await import("node:os");
         const path = await import("node:path");
         cacheRoot = path.join(os.homedir(), ".cache");
       }
-      await core.load(cacheRoot, resolved.directory, onProgress);
+      await core.load(cacheRoot, resolved.directory ?? "", onProgress);
     }
     return new Shapes();
   }
@@ -194,20 +203,13 @@ export class Shapes {
   }
 }
 
-async function loadPackagedModel() {
-  if (IS_NODE) {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    return {
-      metaJSON: fs.readFileSync(path.join(here, "model", "shapes_meta.json"), "utf8"),
-      modelBytes: new Uint8Array(fs.readFileSync(path.join(here, "model", "shapes.tflite"))),
-    };
-  }
+// Fetch self-hosted model files from a base URL (the `modelBaseUrl` opt-out).
+// Accepts absolute URLs and root-relative paths (e.g. "/assets/shapes/").
+async function fetchModelFrom(baseUrl) {
+  const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const [meta, model] = await Promise.all([
-    fetch(new URL("./model/shapes_meta.json", import.meta.url)).then((r) => r.text()),
-    fetch(new URL("./model/shapes.tflite", import.meta.url)).then((r) => r.arrayBuffer()),
+    fetch(`${base}shapes_meta.json`).then((r) => r.text()),
+    fetch(`${base}shapes.tflite`).then((r) => r.arrayBuffer()),
   ]);
   return { metaJSON: meta, modelBytes: new Uint8Array(model) };
 }

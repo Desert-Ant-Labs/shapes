@@ -19,10 +19,15 @@ npm i @desert-ant-labs/shapes @litertjs/core
 npm i @desert-ant-labs/shapes
 ```
 
+The model is **downloaded from the Hugging Face Hub on first use** (at the SDK's
+pinned tag) and then cached, so nothing model-sized is shipped in the npm
+tarball; see [Loading the model](#loading-the-model) for the self-host / offline
+opt-outs.
+
 ```js
 import { Shapes } from "@desert-ant-labs/shapes";
 
-const shapes = await Shapes.load();            // bundled model by default
+const shapes = await Shapes.load();            // downloads + caches on first use
 const shape = await shapes.recognize(points);  // points: [{x, y}, ...] or [x0, y0, ...]
 
 if (shape?.kind === "rectangle") {
@@ -31,11 +36,24 @@ if (shape?.kind === "rectangle") {
 shapes.dispose();  // (Node) free the native handle when done; no-op in the browser
 ```
 
-`Shapes.load()` accepts:
+### Loading the model
 
-- `directory` (Node): opt into an explicit model directory; files already there
-  are used offline, otherwise the model is downloaded into it. Omit to use the
-  model bundled in the npm package.
+By default `Shapes.load()` downloads this platform's model files from the Hugging
+Face Hub ([`desert-ant-labs/shapes`](https://huggingface.co/desert-ant-labs/shapes))
+at the SDK's pinned tag, verifies them (SHA-256), and caches them (the OS cache
+dir in Node, the browser's fetch cache in the browser), so it loads once and runs
+offline afterward. Node fetches the `.tflite` (LiteRT) on Linux and the
+`.mlmodelc/` (Core ML) on macOS; the browser fetches the `.tflite` for LiteRT.js.
+
+To self-host or run fully offline, opt out of the Hub:
+
+- `directory` (Node): an explicit model directory. Files already there are used
+  offline; otherwise the model is downloaded into it.
+- `modelBaseUrl` (Browser): a base URL you serve the model files from (e.g.
+  `"/assets/shapes/"`), loaded instead of the Hub.
+
+`Shapes.load()` also accepts:
+
 - `cacheRoot` (Node): base directory for the managed cache (default `~/.cache`).
 - `onProgress`: load/download progress callback, fraction in `[0, 1]`.
 - Browser-only: `litert` (bring-your-own `@litertjs/core`), `litertWasmDir`

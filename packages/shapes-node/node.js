@@ -20,6 +20,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // (libLiteRt) beside it; the core's runpath is `$ORIGIN`, so the two resolve
 // with no LD_LIBRARY_PATH. On macOS the core uses Core ML (part of the OS), so
 // there is no extra runtime to ship.
+//
+// The npm package does not bundle the model: on first `load()` the core
+// downloads this host's files (`.tflite` on Linux, `.mlmodelc/` on macOS) from
+// the Hugging Face Hub at the SDK's pinned tag, verifies them (SHA-256), and
+// caches them under the OS cache dir, then loads the artifact by path. An
+// explicit `directory` adopts a self-hosted folder instead of downloading.
 function nativeDir() {
   const key = `${process.platform}-${process.arch}`;
   const dir = path.join(HERE, "native", key);
@@ -45,7 +51,6 @@ function loadLib() {
   const core = koffi.load(path.join(dir, CORE[process.platform] || CORE.linux));
   lib = {
     create: core.func("void* shapes_create(const char*, const char*)"),
-    createBundledPath: core.func("void* shapes_create_bundled_path(const char*, const char*)"),
     isDownloaded: core.func("int shapes_is_downloaded(void*)"),
     download: core.func("int shapes_download(void*)"),
     run: core.func("void* shapes_run(void*, uint8_t*, int, double)"),
@@ -91,7 +96,7 @@ function decodeShape(ptr) {
  * iOS/Swift SDK.
  *
  * ```js
- * const shapes = await Shapes.load();           // bundled model, ready offline
+ * const shapes = await Shapes.load();           // downloads + caches on first use
  * const shape = await shapes.recognize(points); // Shape | null
  * shapes.dispose();                             // free the native handle when done
  * ```
@@ -101,38 +106,28 @@ export class Shapes {
   constructor(handle) { this.#handle = handle; }
 
   /**
-   * Load the model and return a ready recognizer. Download, SHA-256
-   * verification, and caching are handled by the native core; the repo and
-   * revision are pinned to the SDK.
+   * Load the model and return a ready recognizer. By default the native core
+   * downloads this host's files from the Hugging Face Hub at the SDK's pinned
+   * tag (repo and revision are pinned), verifies them (SHA-256), and caches
+   * them, then loads the artifact by path: LiteRT on Linux (the `.tflite`) and
+   * Core ML on macOS (the compiled `.mlmodelc` directory). Pass an explicit
+   * `directory` to adopt self-hosted files (offline) instead of downloading.
    */
   static async load(options = {}) {
     const l = loadLib();
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : undefined;
-    let handle;
-    if (options.directory == null) {
-      // Shapes is small, so the npm package ships the model and loads it by
-      // default. The server-side native runs LiteRT on Linux (from the .tflite)
-      // and Core ML on macOS (from the compiled .mlmodelc directory); pass this
-      // host's artifact by path - one primitive, both runtimes, no network or
-      // cache setup.
-      const modelDir = path.join(HERE, "model");
-      const meta = fs.readFileSync(path.join(modelDir, "shapes_meta.json"), "utf8");
-      const artifact = process.platform === "darwin" ? "shapes.mlmodelc" : "shapes.tflite";
-      handle = l.createBundledPath(meta, path.join(modelDir, artifact));
-      onProgress?.(1);
-    } else {
-      // An explicit directory opts into adopt-or-download behavior.
-      const cacheRoot = options.cacheRoot ?? path.join(os.homedir(), ".cache");
-      handle = l.create(cacheRoot, options.directory);
-    }
+    const cacheRoot = options.cacheRoot ?? path.join(os.homedir(), ".cache");
+    // directory == null -> download this platform's files from HF at the pinned
+    // tag into the managed cache; a directory adopts a self-hosted folder.
+    const handle = l.create(cacheRoot, options.directory ?? null);
     if (!handle) throw new Error("@desert-ant-labs/shapes: failed to create recognizer");
     const shapes = new Shapes(handle);
-    if (options.directory != null && l.isDownloaded(handle) === 0) {
+    if (l.isDownloaded(handle) === 0) {
       onProgress?.(0);
       const rc = await callAsync(l.download, handle);
       if (rc !== 0) { shapes.dispose(); throw new Error("@desert-ant-labs/shapes: model download failed"); }
-      onProgress?.(1);
     }
+    onProgress?.(1);
     return shapes;
   }
 
